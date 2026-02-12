@@ -42,6 +42,65 @@ Item {
         onTriggered:  QGroundControl.videoManager.startVideo()
     }
 
+    // Mock video placeholder (shown when no real video source is active)
+    Rectangle {
+        id:             mockVideoView
+        anchors.fill:   parent
+        color:          "#1a1a2e"
+        visible:        !QGroundControl.videoManager.isStreamSource && !QGroundControl.videoManager.isUvc
+
+        Rectangle {
+            anchors.fill: parent
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "#16213e" }
+                GradientStop { position: 0.5; color: "#0f3460" }
+                GradientStop { position: 1.0; color: "#1a1a2e" }
+            }
+        }
+
+        // Scan line animation
+        Rectangle {
+            width: parent.width
+            height: 2
+            color: Qt.rgba(0.2, 0.8, 0.2, 0.3)
+            y: 0
+            SequentialAnimation on y {
+                loops: Animation.Infinite
+                NumberAnimation { to: mockVideoView.height; duration: 3000; easing.type: Easing.InOutQuad }
+                NumberAnimation { to: 0; duration: 3000; easing.type: Easing.InOutQuad }
+            }
+        }
+
+        // Crosshair overlay
+        Item {
+            anchors.centerIn: parent
+            width: Math.min(parent.width, parent.height) * 0.3
+            height: width
+            Rectangle { anchors.centerIn: parent; width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.3) }
+            Rectangle { anchors.centerIn: parent; width: 1; height: parent.height; color: Qt.rgba(1,1,1,0.3) }
+            Rectangle { anchors.centerIn: parent; width: parent.width * 0.15; height: parent.width * 0.15; color: "transparent"; border.color: Qt.rgba(1,1,1,0.4); border.width: 1 }
+        }
+
+        Column {
+            anchors.centerIn: parent
+            spacing: ScreenTools.defaultFontPixelHeight * 0.5
+            QGCLabel {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text:           qsTr("MOCK VIDEO")
+                font.pointSize: _root.pipState.state === _root.pipState.fullState ? ScreenTools.largeFontPointSize : ScreenTools.defaultFontPointSize
+                font.bold:      true
+                color:          "white"
+            }
+            QGCLabel {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text:           qsTr("Camera feed will appear here")
+                font.pointSize: ScreenTools.defaultFontPointSize
+                color:          Qt.rgba(1,1,1,0.6)
+                visible:        _root.pipState.state === _root.pipState.fullState
+            }
+        }
+    }
+
     //-- Video Streaming
     FlightDisplayViewVideo {
         id:             videoStreaming

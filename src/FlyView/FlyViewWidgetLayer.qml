@@ -21,6 +21,7 @@ Item {
     property var    totalToolInsets:        _totalToolInsets
     property var    mapControl
     property bool   isViewer3DOpen:         false
+    property bool   cameraMode:             false
 
     property var    _activeVehicle:         QGroundControl.multiVehicleManager.activeVehicle
     property var    _planMasterController:  globals.planMasterControllerFlyView
@@ -80,10 +81,11 @@ Item {
         anchors.bottom:     parent.bottom
         anchors.right:      parent.right
         spacing:            _layoutSpacing
+        visible:            !cameraMode
 
-        property real bottomEdgeRightInset:     height + _layoutMargin
+        property real bottomEdgeRightInset:     visible ? height + _layoutMargin : 0
         property real bottomEdgeCenterInset:    bottomEdgeRightInset
-        property real rightEdgeBottomInset:     width + _layoutMargin
+        property real rightEdgeBottomInset:     visible ? width + _layoutMargin : 0
     }
 
     FlyViewMissionCompleteDialog {
@@ -169,7 +171,7 @@ Item {
         anchors.top:        parent.top
         mapControl:         _mapControl
         autoHide:           true
-        visible:            !ScreenTools.isTinyScreen && QGroundControl.corePlugin.options.flyView.showMapScale && !isViewer3DOpen && mapControl.pipState.state === mapControl.pipState.fullState
+        visible:            !ScreenTools.isTinyScreen && QGroundControl.corePlugin.options.flyView.showMapScale && !isViewer3DOpen && mapControl.pipState.state === mapControl.pipState.fullState && !cameraMode
 
         property real topEdgeCenterInset: visible ? y + height : 0
     }

@@ -7,6 +7,7 @@ import QtLocation
 import QtPositioning
 import QtQuick.Window
 import QtQml.Models
+import Qt5Compat.GraphicalEffects
 
 import QGroundControl
 import QGroundControl.Controls
@@ -15,7 +16,7 @@ import QGroundControl.FlightMap
 import QGroundControl.Viewer3D
 
 Item {
-    id: _root
+    id: _flyViewRoot
 
     // These should only be used by MainRootWindow
     property var planController:    _planController
@@ -43,6 +44,7 @@ Item {
     property var    _mapControl:            mapControl
     property real   _widgetMargin:          ScreenTools.defaultFontPixelWidth * 0.75
 
+    property bool   mockVideoMode:      false    // Toggle for mock video view
     property real   _fullItemZorder:    0
     property real   _pipItemZorder:     QGroundControl.zOrderWidgets
 
@@ -82,6 +84,10 @@ Item {
         FlyViewVideo {
             id:         videoControl
             pipView:    _pipView
+            layer.enabled: cameraControls.bwFilterEnabled
+            layer.effect: Desaturate {
+                desaturation: 1.0
+            }
         }
 
         PipView {
@@ -91,13 +97,27 @@ Item {
             anchors.margins:        _toolsMargin
             item1IsFullSettingsKey: "MainFlyWindowIsMap"
             item1:                  mapControl
-            item2:                  QGroundControl.videoManager.hasVideo ? videoControl : null
-            show:                   QGroundControl.videoManager.hasVideo && !QGroundControl.videoManager.fullScreen &&
+            item2:                  _hasVideoOrMock ? videoControl : null
+            show:                   _hasVideoOrMock && !QGroundControl.videoManager.fullScreen &&
                                         (videoControl.pipState.state === videoControl.pipState.pipState || mapControl.pipState.state === mapControl.pipState.pipState)
             z:                      QGroundControl.zOrderWidgets
 
+            property bool _hasVideoOrMock: QGroundControl.videoManager.hasVideo || _flyViewRoot.mockVideoMode
             property real leftEdgeBottomInset: visible ? width + anchors.margins : 0
             property real bottomEdgeLeftInset: visible ? height + anchors.margins : 0
+        }
+
+        CameraControlOverlay {
+            id:                     cameraControls
+            anchors.right:          parent.right
+            anchors.top:            parent.top
+            anchors.rightMargin:    _toolsMargin
+            anchors.topMargin:      toolbar.height + _toolsMargin
+            width:                  ScreenTools.defaultFontPixelWidth * 9
+            height:                 parent.height - toolbar.height - (_toolsMargin * 2)
+            z:                      _fullItemZorder + 1
+            visible:                _flyViewRoot.mockVideoMode ||
+                                        (!_mainWindowIsMap && QGroundControl.videoManager.hasVideo)
         }
 
         FlyViewWidgetLayer {
@@ -113,6 +133,7 @@ Item {
             mapControl:             _mapControl
             visible:                !QGroundControl.videoManager.fullScreen
             isViewer3DOpen:         viewer3DWindow.isOpen
+            cameraMode:             _flyViewRoot.mockVideoMode || !_mainWindowIsMap
         }
 
         FlyViewCustomLayer {

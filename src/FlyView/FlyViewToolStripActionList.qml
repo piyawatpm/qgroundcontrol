@@ -8,7 +8,31 @@ ToolStripActionList {
 
     signal displayPreFlightChecklist
 
+    property bool _isCameraMode: false
+
     model: [
+        ToolStripAction {
+            id:             cameraToggle
+            text:           _root._isCameraMode ? qsTr("Map") : qsTr("Camera")
+            iconSource:     _root._isCameraMode ? "/qmlimages/PaperPlane.svg" : "/qmlimages/CameraIcon.svg"
+            onTriggered: {
+                if (_root._isCameraMode) {
+                    // Switch back to map mode
+                    _root._isCameraMode = false
+                    _flyViewRoot.mockVideoMode = false
+                    if (!_flyViewRoot._mainWindowIsMap) {
+                        _pipView._swapPip()
+                    }
+                } else {
+                    // Switch to camera/video mode
+                    _root._isCameraMode = true
+                    _flyViewRoot.mockVideoMode = true
+                    if (_flyViewRoot._mainWindowIsMap) {
+                        _pipView._swapPip()
+                    }
+                }
+            }
+        },
         ToolStripAction {
             property bool _is3DViewOpen:            viewer3DWindow.isOpen
             property bool   _viewer3DEnabled:       QGroundControl.settingsManager.viewer3DSettings.enabled.rawValue

@@ -104,6 +104,51 @@ else()
 endif()
 
 # ----------------------------------------------------------------------------
+# Force-include Qt shared libraries that androiddeployqt fails to resolve
+# androiddeployqt has a Qt 6.10.x bug where it silently skips core Qt libs.
+# Only list libraries QGC actually uses to avoid pulling in unwanted plugins.
+# ----------------------------------------------------------------------------
+set(_qt_android_lib_dir "${Qt6_DIR}/../../")
+get_filename_component(_qt_android_lib_dir "${_qt_android_lib_dir}" ABSOLUTE)
+set(_qt_android_plugins_dir "${_qt_android_lib_dir}/../plugins")
+get_filename_component(_qt_android_plugins_dir "${_qt_android_plugins_dir}" ABSOLUTE)
+# Glob ALL Qt6 shared libraries — avoids missing any transitive dependency
+file(GLOB _qt_all_libs "${_qt_android_lib_dir}/libQt6*_${CMAKE_ANDROID_ARCH_ABI}.so")
+set(_qt_extra_libs ${_qt_all_libs})
+
+# Add Qt plugins that androiddeployqt fails to resolve
+set(_qt_plugin_subdirs
+    platforms position geoservices iconengines imageformats
+    multimedia networkinformation platforminputcontexts
+    sensors sqldrivers styles texttospeech tls
+)
+foreach(_subdir ${_qt_plugin_subdirs})
+    file(GLOB _plugins "${_qt_android_plugins_dir}/${_subdir}/*.so")
+    foreach(_p ${_plugins})
+        get_filename_component(_pname "${_p}" NAME)
+        # Skip ffmpeg (needs libavformat/libavcodec not bundled) and webview (JNI_ERR)
+        if(NOT _pname MATCHES "ffmpeg|webview")
+            list(APPEND _qt_extra_libs "${_p}")
+        endif()
+    endforeach()
+endforeach()
+
+if(_qt_extra_libs)
+    set_property(TARGET ${CMAKE_PROJECT_NAME} APPEND PROPERTY QT_ANDROID_EXTRA_LIBS ${_qt_extra_libs})
+    list(LENGTH _qt_extra_libs _extra_count)
+    message(STATUS "QGC: Force-included ${_extra_count} Qt shared libraries in QT_ANDROID_EXTRA_LIBS")
+endif()
+
+# Strip ffmpeg plugin from androiddeployqt JSON (it lists ffmpeg but we don't bundle
+# the full ffmpeg libs; Qt loader aborts if any listed plugin fails to dlopen)
+set(_deploy_json "${CMAKE_BINARY_DIR}/android-${CMAKE_PROJECT_NAME}-deployment-settings.json")
+add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -DDEPLOY_JSON=${_deploy_json}
+        -P ${CMAKE_CURRENT_LIST_DIR}/StripFfmpegPlugin.cmake
+    COMMENT "Stripping ffmpeg plugin from Android deploy JSON"
+)
+
+# ----------------------------------------------------------------------------
 # Android Permissions
 # ----------------------------------------------------------------------------
 

@@ -18,6 +18,7 @@ qt_add_qml_module(FlyViewModule
         FlightDisplayViewQtMultimedia.qml
         FlightDisplayViewUVC.qml
         FlightDisplayViewVideo.qml
+        CameraControlOverlay.qml
         FlyView.qml
         FlyViewAdditionalActionsButton.qml
         FlyViewAdditionalActionsList.qml
