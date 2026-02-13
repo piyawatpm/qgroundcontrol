@@ -114,7 +114,14 @@ set(_qt_android_plugins_dir "${_qt_android_lib_dir}/../plugins")
 get_filename_component(_qt_android_plugins_dir "${_qt_android_plugins_dir}" ABSOLUTE)
 # Glob ALL Qt6 shared libraries — avoids missing any transitive dependency
 file(GLOB _qt_all_libs "${_qt_android_lib_dir}/libQt6*_${CMAKE_ANDROID_ARCH_ABI}.so")
-set(_qt_extra_libs ${_qt_all_libs})
+set(_qt_extra_libs)
+foreach(_lib ${_qt_all_libs})
+    get_filename_component(_lname "${_lib}" NAME)
+    # Skip FFmpegStub, WebView (JNI_ERR), and style plugins excluded by gradle packagingOptions
+    if(NOT _lname MATCHES "FFmpeg|WebView|FluentWinUI3|Fusion|Imagine|Material|Universal")
+        list(APPEND _qt_extra_libs "${_lib}")
+    endif()
+endforeach()
 
 # Add Qt plugins that androiddeployqt fails to resolve
 set(_qt_plugin_subdirs
@@ -126,11 +133,23 @@ foreach(_subdir ${_qt_plugin_subdirs})
     file(GLOB _plugins "${_qt_android_plugins_dir}/${_subdir}/*.so")
     foreach(_p ${_plugins})
         get_filename_component(_pname "${_p}" NAME)
-        # Skip ffmpeg (needs libavformat/libavcodec not bundled) and webview (JNI_ERR)
-        if(NOT _pname MATCHES "ffmpeg|webview")
+        # Skip ffmpeg, webview, and style plugins excluded by gradle packagingOptions
+        if(NOT _pname MATCHES "ffmpeg|webview|FluentWinUI3|Fusion|Imagine|Material|Universal")
             list(APPEND _qt_extra_libs "${_p}")
         endif()
     endforeach()
+endforeach()
+
+# Add QML plugins that androiddeployqt fails to resolve (Qt 6.10.x bug)
+set(_qt_qml_dir "${_qt_android_lib_dir}/../qml")
+get_filename_component(_qt_qml_dir "${_qt_qml_dir}" ABSOLUTE)
+file(GLOB_RECURSE _qml_plugins "${_qt_qml_dir}/*.so")
+foreach(_p ${_qml_plugins})
+    get_filename_component(_pname "${_p}" NAME)
+    # Skip ffmpeg, webview, and style plugins excluded by gradle packagingOptions
+    if(NOT _pname MATCHES "ffmpeg|webview|FluentWinUI3|Fusion|Imagine|Material|Universal")
+        list(APPEND _qt_extra_libs "${_p}")
+    endif()
 endforeach()
 
 if(_qt_extra_libs)
