@@ -836,6 +836,31 @@ Item {
                     }
                 }
 
+                // Low Latency toggle
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width:              _smallButtonSize * 1.3
+                    height:             _smallButtonSize * 0.65
+                    radius:             ScreenTools.defaultFontPixelWidth * 0.3
+                    color:              _videoSettings.lowLatencyMode.rawValue ? qgcPal.colorGreen : (llMA.pressed ? qgcPal.buttonHighlight : qgcPal.button)
+                    border.width:       1
+                    border.color:       qgcPal.buttonText
+
+                    QGCLabel {
+                        anchors.centerIn:   parent
+                        text:               qsTr("LL")
+                        font.pointSize:     ScreenTools.smallFontPointSize
+                        font.bold:          true
+                        color:              _videoSettings.lowLatencyMode.rawValue ? "white" : qgcPal.buttonText
+                    }
+
+                    MouseArea {
+                        id:             llMA
+                        anchors.fill:   parent
+                        onClicked:      _videoSettings.lowLatencyMode.rawValue = !_videoSettings.lowLatencyMode.rawValue
+                    }
+                }
+
                 // Separator
                 Rectangle { width: parent.width; height: 1; color: Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.3) }
 

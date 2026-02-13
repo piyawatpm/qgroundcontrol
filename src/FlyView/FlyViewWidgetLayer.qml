@@ -36,6 +36,8 @@ Item {
     property real   _layoutMargin:          ScreenTools.defaultFontPixelWidth * 0.75
     property bool   _layoutSpacing:         ScreenTools.defaultFontPixelWidth
     property bool   _showSingleVehicleUI:   true
+    property bool   _multipleVehicles:     QGroundControl.multiVehicleManager.vehicles.count > 1
+    property bool   _settingEnableMVPanel: QGroundControl.settingsManager.appSettings.enableMultiVehiclePanel.value
 
     QGCToolInsets {
         id:                     _totalToolInsets
@@ -58,9 +60,10 @@ Item {
         anchors.top:            parent.top
         anchors.right:          parent.right
         maximumHeight:          parent.height - (bottomRightRowLayout.height + _margins * 4)
+        visible:                !cameraMode && !QGroundControl.videoManager.fullScreen && _root._multipleVehicles && _root._settingEnableMVPanel
 
-        property real topEdgeRightInset:    height + _layoutMargin
-        property real rightEdgeTopInset:    width + _layoutMargin
+        property real topEdgeRightInset:    visible ? height + _layoutMargin : 0
+        property real rightEdgeTopInset:    visible ? width + _layoutMargin : 0
         property real rightEdgeCenterInset: rightEdgeTopInset
     }
 
@@ -69,10 +72,10 @@ Item {
         anchors.top:        parent.top
         anchors.right:      parent.right
         spacing:            _layoutSpacing
-        visible:           !topRightPanel.visible
+        visible:           !topRightPanel.visible && !cameraMode
 
-        property real topEdgeRightInset:    childrenRect.height + _layoutMargin
-        property real rightEdgeTopInset:    width + _layoutMargin
+        property real topEdgeRightInset:    visible ? childrenRect.height + _layoutMargin : 0
+        property real rightEdgeTopInset:    visible ? width + _layoutMargin : 0
         property real rightEdgeCenterInset: rightEdgeTopInset
     }
 
