@@ -347,13 +347,7 @@ Item {
                         MouseArea {
                             id:             zoomInMA
                             anchors.fill:   parent
-                            onClicked: {
-                                if (_hasRealCamera && _camera.hasZoom) {
-                                    _camera.stepZoom(1)
-                                } else {
-                                    _mockZoomLevel = Math.min(100, _mockZoomLevel + 10)
-                                }
-                            }
+                            onClicked:      _root._zoomStep(1)
                         }
                     }
 
@@ -404,13 +398,7 @@ Item {
                         MouseArea {
                             id:             zoomOutMA
                             anchors.fill:   parent
-                            onClicked: {
-                                if (_hasRealCamera && _camera.hasZoom) {
-                                    _camera.stepZoom(-1)
-                                } else {
-                                    _mockZoomLevel = Math.max(0, _mockZoomLevel - 10)
-                                }
-                            }
+                            onClicked:      _root._zoomStep(-1)
                         }
                     }
                 }
@@ -766,11 +754,14 @@ Item {
                             onClicked: {
                                 gimbalPad._stickX = 0
                                 gimbalPad._stickY = 0
+                                _mockGimbalPitch = 0
+                                _mockGimbalYaw = 0
                                 if (_hasGimbal) {
                                     _gimbalController.gimbalOnScreenControl(0, 0, true, false, false)
-                                } else {
-                                    _mockGimbalPitch = 0
-                                    _mockGimbalYaw = 0
+                                } else if (_activeVehicle) {
+                                    // Direct MAVLink: reset gimbal to 0,0
+                                    // flags: ROLL_LOCK(4) | PITCH_LOCK(8) | YAW_IN_VEHICLE_FRAME(32) = 44
+                                    _activeVehicle.sendCommand(1, 287, false, 0, 0, NaN, NaN, 44, 0, 0)
                                 }
                             }
                         }
@@ -833,31 +824,6 @@ Item {
                         id:             bwMA
                         anchors.fill:   parent
                         onClicked:      bwFilterEnabled = !bwFilterEnabled
-                    }
-                }
-
-                // Low Latency toggle
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width:              _smallButtonSize * 1.3
-                    height:             _smallButtonSize * 0.65
-                    radius:             ScreenTools.defaultFontPixelWidth * 0.3
-                    color:              _videoSettings.lowLatencyMode.rawValue ? qgcPal.colorGreen : (llMA.pressed ? qgcPal.buttonHighlight : qgcPal.button)
-                    border.width:       1
-                    border.color:       qgcPal.buttonText
-
-                    QGCLabel {
-                        anchors.centerIn:   parent
-                        text:               qsTr("LL")
-                        font.pointSize:     ScreenTools.smallFontPointSize
-                        font.bold:          true
-                        color:              _videoSettings.lowLatencyMode.rawValue ? "white" : qgcPal.buttonText
-                    }
-
-                    MouseArea {
-                        id:             llMA
-                        anchors.fill:   parent
-                        onClicked:      _videoSettings.lowLatencyMode.rawValue = !_videoSettings.lowLatencyMode.rawValue
                     }
                 }
 
@@ -1050,18 +1016,63 @@ Item {
     // ═══════════════════════════════════════
     // HELPER FUNCTIONS
     // ═══════════════════════════════════════
+
+    // Zoom step: sends MAV_CMD_SET_CAMERA_ZOOM (531) directly to bypass hasZoom capability check
+    // param1: 1 = ZOOM_TYPE_STEP, param2: direction (-1 wide, +1 tele)
+    function _zoomStep(direction) {
+        if (_activeVehicle) {
+            if (_hasRealCamera && _camera.hasZoom) {
+                _camera.stepZoom(direction)
+            } else {
+                // Direct MAVLink fallback — works even if camera doesn't report zoom capability
+                var compId = _hasRealCamera ? _camera.compID : 1
+                _activeVehicle.sendCommand(compId, 531, false, 1, direction)
+            }
+        }
+        // Always update mock for visual feedback
+        if (direction > 0) {
+            _mockZoomLevel = Math.min(100, _mockZoomLevel + 10)
+        } else {
+            _mockZoomLevel = Math.max(0, _mockZoomLevel - 10)
+        }
+    }
+
+    // Gimbal step (discrete): sends MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW (287) directly
+    // as fallback when gimbal not detected via gimbal manager protocol
     function _gimbalStep(dx, dy) {
         if (_hasGimbal) {
             _gimbalController.gimbalOnScreenControl(dx, dy, true, false, false)
+        } else if (_activeVehicle) {
+            // Direct MAVLink fallback: send pitch/yaw angle increment
+            // MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW: param1=pitch, param2=yaw, param5=flags, param7=deviceId
+            var pitchInc = dy * 15   // degrees per step
+            var yawInc   = dx * 15
+            var currentPitch = _mockGimbalPitch
+            var currentYaw   = _mockGimbalYaw
+            var newPitch = Math.max(-90, Math.min(45, currentPitch + pitchInc))
+            var newYaw   = Math.max(-180, Math.min(180, currentYaw + yawInc))
+            // flags: ROLL_LOCK(4) | PITCH_LOCK(8) | YAW_IN_VEHICLE_FRAME(32) = 44
+            _activeVehicle.sendCommand(1, 287, false, newPitch, newYaw, NaN, NaN, 44, 0, 0)
+            _mockGimbalPitch = newPitch
+            _mockGimbalYaw   = newYaw
         } else {
             _mockGimbalYaw   = Math.max(-180, Math.min(180, _mockGimbalYaw   + dx * 45))
             _mockGimbalPitch = Math.max(-90,  Math.min(90,  _mockGimbalPitch + dy * 45))
         }
     }
 
+    // Gimbal drag (continuous): sends gimbal commands from pad drag
     function _applyGimbal(dx, dy) {
         if (_hasGimbal) {
             _gimbalController.gimbalOnScreenControl(dx, dy, false, true, true)
+        } else if (_activeVehicle) {
+            // Direct MAVLink: map pad position to absolute angle
+            var pitch = dy * 45    // ±45 deg range
+            var yaw   = dx * 90    // ±90 deg range
+            // flags: ROLL_LOCK(4) | PITCH_LOCK(8) | YAW_IN_VEHICLE_FRAME(32) = 44
+            _activeVehicle.sendCommand(1, 287, false, pitch, yaw, NaN, NaN, 44, 0, 0)
+            _mockGimbalPitch = pitch
+            _mockGimbalYaw   = yaw
         } else {
             _mockGimbalYaw   = Math.max(-180, Math.min(180, dx * 180))
             _mockGimbalPitch = Math.max(-90,  Math.min(90,  dy * 90))
@@ -1072,11 +1083,13 @@ Item {
         if (_isPhotoMode) {
             if (_hasRealCamera) {
                 _camera.takePhoto()
-            } else {
-                _mockPhotoCount++
-                photoFlash.opacity = 0.6
-                mockPhotoFlashTimer.start()
+            } else if (_activeVehicle) {
+                // MAV_CMD_IMAGE_START_CAPTURE (2000): param3=1 (single capture)
+                _activeVehicle.sendCommand(1, 2000, false, 0, 0, 1)
             }
+            _mockPhotoCount++
+            photoFlash.opacity = 0.6
+            mockPhotoFlashTimer.start()
         } else {
             if (_hasRealCamera) {
                 _camera.toggleVideoRecording()
@@ -1084,9 +1097,17 @@ Item {
                 if (_mockRecording) {
                     _mockRecording = false
                     _mockRecordSeconds = 0
+                    if (_activeVehicle) {
+                        // MAV_CMD_VIDEO_STOP_CAPTURE (2501)
+                        _activeVehicle.sendCommand(1, 2501, false)
+                    }
                 } else {
                     _mockRecording = true
                     _mockRecordSeconds = 0
+                    if (_activeVehicle) {
+                        // MAV_CMD_VIDEO_START_CAPTURE (2500)
+                        _activeVehicle.sendCommand(1, 2500, false, 0, 0)
+                    }
                 }
             }
         }
