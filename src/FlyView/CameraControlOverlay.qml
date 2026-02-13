@@ -530,67 +530,6 @@ Item {
                 }
 
                 // ═══════════════════════════════════════
-                // LENS SELECTION SECTION
-                // ═══════════════════════════════════════
-                Column {
-                    width:      parent.width
-                    spacing:    _sectionSpacing
-
-                    QGCLabel {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text:               qsTr("LENS")
-                        font.pointSize:     ScreenTools.smallFontPointSize
-                        font.bold:          true
-                        color:              qgcPal.text
-                    }
-
-                    // W / Z / T toggle buttons
-                    Row {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        spacing:    2
-
-                        Repeater {
-                            model: [
-                                { label: "W", mode: 0 },
-                                { label: "Z", mode: 1 },
-                                { label: "T", mode: 2 }
-                            ]
-
-                            Rectangle {
-                                width:      (_panelWidth - (_margins * 2) - 4) / 3
-                                height:     _smallButtonSize * 0.65
-                                radius:     ScreenTools.defaultFontPixelWidth * 0.3
-                                color:      _lensMode === modelData.mode ? qgcPal.colorGreen : qgcPal.button
-                                border.width: 1
-                                border.color: qgcPal.buttonText
-
-                                QGCLabel {
-                                    anchors.centerIn:   parent
-                                    text:               modelData.label
-                                    font.pointSize:     ScreenTools.smallFontPointSize
-                                    font.bold:          true
-                                    color:              _lensMode === modelData.mode ? "white" : qgcPal.buttonText
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    onClicked: {
-                                        if (_hasRealCamera && _activeVehicle) {
-                                            // MAV_CMD_SET_CAMERA_SOURCE (534), param2=lensId
-                                            _activeVehicle.sendCommand(_camera.compID, 534, false, 0, modelData.mode)
-                                        }
-                                        _mockLensMode = modelData.mode
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Separator
-                Rectangle { width: parent.width; height: 1; color: Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.3) }
-
-                // ═══════════════════════════════════════
                 // GIMBAL SECTION
                 // ═══════════════════════════════════════
                 Column {

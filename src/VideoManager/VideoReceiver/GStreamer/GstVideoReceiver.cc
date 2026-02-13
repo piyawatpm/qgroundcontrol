@@ -95,6 +95,14 @@ void GstVideoReceiver::start(uint32_t timeout)
             break;
         }
 
+        // Minimize queue buffering for lowest latency
+        g_object_set(decoderQueue,
+                     "max-size-buffers", (guint) 1,
+                     "max-size-bytes", (guint) 0,
+                     "max-size-time", (guint64) 0,
+                     "leaky", 2, // 2 = downstream (drop old frames)
+                     nullptr);
+
         _decoderValve = gst_element_factory_make("valve", nullptr);
         if (!_decoderValve)  {
             qCCritical(GstVideoReceiverLog) << "gst_element_factory_make('valve') failed";
@@ -110,6 +118,14 @@ void GstVideoReceiver::start(uint32_t timeout)
             qCCritical(GstVideoReceiverLog) << "gst_element_factory_make('queue') failed";
             break;
         }
+
+        // Minimize recorder queue buffering too
+        g_object_set(recorderQueue,
+                     "max-size-buffers", (guint) 1,
+                     "max-size-bytes", (guint) 0,
+                     "max-size-time", (guint64) 0,
+                     "leaky", 2,
+                     nullptr);
 
         _recorderValve = gst_element_factory_make("valve", nullptr);
         if (!_recorderValve) {
@@ -130,6 +146,9 @@ void GstVideoReceiver::start(uint32_t timeout)
         g_object_set(_pipeline,
                      "message-forward", TRUE,
                      nullptr);
+
+        // Force zero pipeline latency for real-time video
+        gst_pipeline_set_latency(GST_PIPELINE(_pipeline), 0);
 
         _source = _makeSource(_uri);
         if (!_source) {
@@ -654,7 +673,10 @@ GstElement *GstVideoReceiver::_makeSource(const QString &input)
 
             g_object_set(source,
                          "location", input.toUtf8().constData(),
-                         "latency", 25,
+                         "latency", 0,
+                         "buffer-mode", 0,          // 0 = none (no internal buffering)
+                         "do-retransmission", FALSE,
+                         "udp-reconnect", TRUE,
                          nullptr);
         } else if (isTcpMPEGTS) {
             source = gst_element_factory_make("tcpclientsrc", "source");
@@ -1042,7 +1064,7 @@ bool GstVideoReceiver::_addVideoSink(GstPad *pad)
 
     g_object_set(_videoSink,
                  "widget", _widget,
-                 "sync", (_buffer >= 0),
+                 "sync", FALSE,
                  NULL);
 
     (void) gst_element_sync_state_with_parent(_videoSink);
