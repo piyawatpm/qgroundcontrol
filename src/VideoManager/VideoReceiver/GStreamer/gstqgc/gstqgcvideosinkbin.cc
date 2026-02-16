@@ -156,6 +156,10 @@ gst_qgc_video_sink_bin_init(GstQgcVideoSinkBin *self)
     g_object_set(self->glsinkbin,
                  "sink", self->qmlglsink,
                  PROP_ENABLE_LAST_SAMPLE_NAME, FALSE,
+                 "async", FALSE,                      // skip preroll wait for faster startup
+                 "max-lateness", (gint64) 20000000,   // drop frames arriving >20ms late
+                 "qos", TRUE,                         // QoS events: tell upstream to drop when behind
+                 "processing-deadline", (guint64) 0,  // no additional processing deadline
                  NULL);
 
     g_return_if_fail(gst_bin_add(GST_BIN(self), self->glsinkbin));

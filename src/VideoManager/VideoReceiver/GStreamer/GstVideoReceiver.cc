@@ -675,8 +675,11 @@ GstElement *GstVideoReceiver::_makeSource(const QString &input)
                          "location", input.toUtf8().constData(),
                          "latency", 0,
                          "buffer-mode", 0,          // 0 = none (no internal buffering)
+                         "drop-on-latency", TRUE,   // drop oldest buffers when jitterbuffer full
                          "do-retransmission", FALSE,
+                         "ntp-sync", FALSE,          // avoid 5s startup delay from RTCP SR
                          "udp-reconnect", TRUE,
+                         "protocols", 0x4,           // GST_RTSP_LOWER_TRANS_UDP only (avoid TCP retransmit)
                          nullptr);
         } else if (isTcpMPEGTS) {
             source = gst_element_factory_make("tcpclientsrc", "source");
@@ -701,6 +704,7 @@ GstElement *GstVideoReceiver::_makeSource(const QString &input)
             const QString uri = QStringLiteral("udp://%1:%2").arg(sourceUrl.host(), QString::number(sourceUrl.port()));
             g_object_set(source,
                          "uri", uri.toUtf8().constData(),
+                         "buffer-size", (gint) 524288,  // 512KB kernel recv buffer to avoid packet drops
                          nullptr);
 
             GstCaps *caps = nullptr;
