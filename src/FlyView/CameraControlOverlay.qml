@@ -13,9 +13,6 @@ Item {
     property var  _cameraManager:    _activeVehicle ? _activeVehicle.cameraManager : null
     property var  _camera:           _cameraManager ? _cameraManager.currentCameraInstance : null
     property bool _hasRealCamera:    _camera !== null
-    property var  _gimbalController: _activeVehicle ? _activeVehicle.gimbalController : null
-    property var  _activeGimbal:     _gimbalController ? _gimbalController.activeGimbal : null
-    property bool _hasGimbal:        _activeGimbal !== undefined && _activeGimbal !== null
 
     // Video settings
     property var  _videoSettings:   QGroundControl.settingsManager.videoSettings
@@ -23,26 +20,15 @@ Item {
     // Mock state for when no real camera is connected
     property bool _isMockPhotoMode:     true
     property real _mockZoomLevel:       0
-    property real _mockGimbalPitch:     0
-    property real _mockGimbalYaw:       0
     property bool _mockRecording:       false
     property int  _mockRecordSeconds:   0
     property int  _mockPhotoCount:      0
-    property real _mockFocusLevel:      0
-    property int  _mockLensMode:        0   // 0=Wide, 1=Zoom, 2=Thermal
-    property bool _mockTrackingEnabled: false
-
     // Derived state — adapts to real or mock
     property bool _isPhotoMode:     _hasRealCamera ? (_camera.cameraMode === MavlinkCameraControl.CAM_MODE_PHOTO) : _isMockPhotoMode
     property bool _isVideoMode:     !_isPhotoMode
     property real _zoomLevel:       _hasRealCamera ? _camera.zoomLevel : _mockZoomLevel
     property bool _isRecording:     _hasRealCamera ? (_camera.videoCaptureStatus === MavlinkCameraControl.VIDEO_CAPTURE_STATUS_RUNNING) : _mockRecording
     property bool _isShooting:      _hasRealCamera ? (_camera.photoCaptureStatus === MavlinkCameraControl.PHOTO_CAPTURE_IN_PROGRESS) : false
-
-    // Derived focus/lens/tracking state
-    property real _focusLevel:      _hasRealCamera ? (_camera.focusLevel || 0) : _mockFocusLevel
-    property int  _lensMode:        _mockLensMode
-    property bool _trackingEnabled: _hasRealCamera ? (_camera.trackingEnabled || false) : _mockTrackingEnabled
 
     // B&W filter toggle (exposed to parent)
     property bool bwFilterEnabled:  false
@@ -64,7 +50,6 @@ Item {
     property real   _spacing:           ScreenTools.defaultFontPixelHeight * 0.3 * _scaleFactor
     property real   _sectionSpacing:    ScreenTools.defaultFontPixelHeight * 0.15
     property real   _zoomBarHeight:     ScreenTools.defaultFontPixelHeight * 3 * _scaleFactor
-    property real   _gimbalPadSize:     _panelWidth - (_margins * 2)
 
     QGCPalette { id: qgcPal; colorGroupEnabled: enabled }
 
@@ -84,12 +69,7 @@ Item {
         onTriggered: photoFlash.opacity = 0
     }
 
-    // AF feedback flash reset
-    Timer {
-        id:         afFlashTimer
-        interval:   400
-        onTriggered: afFlashRect.opacity = 0
-    }
+
 
     // Collapse/Expand toggle button (always visible)
     Rectangle {
@@ -406,369 +386,6 @@ Item {
                 // Separator
                 Rectangle { width: parent.width; height: 1; color: Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.3) }
 
-                // ═══════════════════════════════════════
-                // FOCUS SECTION
-                // ═══════════════════════════════════════
-                Column {
-                    width:      parent.width
-                    spacing:    _sectionSpacing
-                    visible:    !_hasRealCamera || (_camera && _camera.hasFocus)
-
-                    QGCLabel {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text:               qsTr("FOCUS")
-                        font.pointSize:     ScreenTools.smallFontPointSize
-                        font.bold:          true
-                        color:              qgcPal.text
-                    }
-
-                    // AF (Auto Focus) button
-                    Rectangle {
-                        id:                     afButton
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width:                  _smallButtonSize * 1.3
-                        height:                 _smallButtonSize * 0.65
-                        radius:                 ScreenTools.defaultFontPixelWidth * 0.3
-                        color:                  afMA.pressed ? qgcPal.buttonHighlight : qgcPal.button
-                        border.width:           1
-                        border.color:           qgcPal.buttonText
-
-                        // AF flash overlay
-                        Rectangle {
-                            id:             afFlashRect
-                            anchors.fill:   parent
-                            radius:         parent.radius
-                            color:          qgcPal.colorGreen
-                            opacity:        0
-                            Behavior on opacity { NumberAnimation { duration: 150 } }
-                        }
-
-                        QGCLabel {
-                            anchors.centerIn:   parent
-                            text:               qsTr("AF")
-                            font.pointSize:     ScreenTools.smallFontPointSize
-                            font.bold:          true
-                            color:              qgcPal.buttonText
-                        }
-
-                        MouseArea {
-                            id:             afMA
-                            anchors.fill:   parent
-                            onClicked: {
-                                if (_hasRealCamera && _activeVehicle) {
-                                    // MAV_CMD_SET_CAMERA_FOCUS (532), param1=4 (FOCUS_TYPE_AUTO)
-                                    _activeVehicle.sendCommand(_camera.compID, 532, false, 4, 0)
-                                }
-                                // Visual feedback flash
-                                afFlashRect.opacity = 0.6
-                                afFlashTimer.start()
-                            }
-                        }
-                    }
-
-                    // MF (Manual Focus) slider
-                    QGCLabel {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text:               qsTr("MF")
-                        font.pointSize:     ScreenTools.smallFontPointSize
-                        color:              qgcPal.text
-                    }
-
-                    // Focus level bar (vertical slider)
-                    Item {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width:                  ScreenTools.defaultFontPixelWidth * 3
-                        height:                 _zoomBarHeight
-
-                        Rectangle {
-                            anchors.centerIn:   parent
-                            width:              ScreenTools.defaultFontPixelWidth * 1.5
-                            height:             parent.height
-                            radius:             width * 0.5
-                            color:              Qt.rgba(qgcPal.windowShadeLight.r, qgcPal.windowShadeLight.g, qgcPal.windowShadeLight.b, 0.5)
-
-                            Rectangle {
-                                anchors.bottom:     parent.bottom
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                width:              parent.width
-                                height:             parent.height * (_focusLevel / 100)
-                                radius:             width * 0.5
-                                color:              qgcPal.colorBlue
-                            }
-                        }
-
-                        MouseArea {
-                            anchors.fill:   parent
-                            onPressed:      (mouse) => { _updateFocus(mouse.y) }
-                            onPositionChanged: (mouse) => { _updateFocus(mouse.y) }
-
-                            function _updateFocus(my) {
-                                var level = Math.max(0, Math.min(100, (1 - my / parent.height) * 100))
-                                if (_hasRealCamera) {
-                                    _camera.setFocusLevel(level)
-                                } else {
-                                    _mockFocusLevel = level
-                                }
-                            }
-                        }
-                    }
-
-                    // Focus level label
-                    QGCLabel {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text:               Math.round(_focusLevel) + "%"
-                        font.pointSize:     ScreenTools.smallFontPointSize
-                        color:              qgcPal.text
-                    }
-                }
-
-                // Separator
-                Rectangle {
-                    width: parent.width; height: 1
-                    color: Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.3)
-                    visible: !_hasRealCamera || (_camera && _camera.hasFocus)
-                }
-
-                // ═══════════════════════════════════════
-                // GIMBAL SECTION
-                // ═══════════════════════════════════════
-                Column {
-                    width:      parent.width
-                    spacing:    _sectionSpacing
-
-                    QGCLabel {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text:               qsTr("GIMBAL")
-                        font.pointSize:     ScreenTools.smallFontPointSize
-                        font.bold:          true
-                        color:              qgcPal.text
-                    }
-
-                    // Gimbal control pad
-                    Item {
-                        id:     gimbalPad
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width:  _gimbalPadSize
-                        height: width
-
-                        property real _padCenterX: width / 2
-                        property real _padCenterY: height / 2
-                        property real _padRadius:  width / 2
-                        property real _stickX:     0
-                        property real _stickY:     0
-
-                        Rectangle {
-                            anchors.fill:   parent
-                            radius:         width * 0.5
-                            color:          "transparent"
-                            border.width:   1
-                            border.color:   Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.4)
-                        }
-
-                        Rectangle {
-                            anchors.centerIn:   parent
-                            width:              parent.width * 0.7
-                            height:             1
-                            color:              Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.2)
-                        }
-                        Rectangle {
-                            anchors.centerIn:   parent
-                            width:              1
-                            height:             parent.height * 0.7
-                            color:              Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.2)
-                        }
-
-                        // Direction arrows
-                        QGCLabel {
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.top:            parent.top
-                            anchors.topMargin:      2
-                            text:                   "\u25B2"
-                            font.pointSize:         ScreenTools.smallFontPointSize * _scaleFactor
-                            color:                  Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.6)
-                            MouseArea {
-                                anchors.fill: parent; anchors.margins: -_margins
-                                onClicked: _root._gimbalStep(0, 0.2)
-                            }
-                        }
-                        QGCLabel {
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.bottom:         parent.bottom
-                            anchors.bottomMargin:   2
-                            text:                   "\u25BC"
-                            font.pointSize:         ScreenTools.smallFontPointSize * _scaleFactor
-                            color:                  Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.6)
-                            MouseArea {
-                                anchors.fill: parent; anchors.margins: -_margins
-                                onClicked: _root._gimbalStep(0, -0.2)
-                            }
-                        }
-                        QGCLabel {
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.left:           parent.left
-                            anchors.leftMargin:     2
-                            text:                   "\u25C0"
-                            font.pointSize:         ScreenTools.smallFontPointSize * _scaleFactor
-                            color:                  Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.6)
-                            MouseArea {
-                                anchors.fill: parent; anchors.margins: -_margins
-                                onClicked: _root._gimbalStep(-0.2, 0)
-                            }
-                        }
-                        QGCLabel {
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.right:          parent.right
-                            anchors.rightMargin:    2
-                            text:                   "\u25B6"
-                            font.pointSize:         ScreenTools.smallFontPointSize * _scaleFactor
-                            color:                  Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.6)
-                            MouseArea {
-                                anchors.fill: parent; anchors.margins: -_margins
-                                onClicked: _root._gimbalStep(0.2, 0)
-                            }
-                        }
-
-                        // Stick indicator
-                        Rectangle {
-                            width:  ScreenTools.defaultFontPixelWidth
-                            height: width
-                            radius: width * 0.5
-                            color:  qgcPal.colorGreen
-                            x:      gimbalPad._padCenterX + (gimbalPad._stickX * gimbalPad._padRadius * 0.6) - (width / 2)
-                            y:      gimbalPad._padCenterY - (gimbalPad._stickY * gimbalPad._padRadius * 0.6) - (height / 2)
-                        }
-
-                        // Touch/Drag area
-                        MouseArea {
-                            anchors.fill: parent
-                            onPressed: (mouse) => { _updateGimbalFromMouse(mouse.x, mouse.y) }
-                            onPositionChanged: (mouse) => { _updateGimbalFromMouse(mouse.x, mouse.y) }
-                            onReleased: { }
-
-                            function _updateGimbalFromMouse(mx, my) {
-                                var dx = (mx - gimbalPad._padCenterX) / gimbalPad._padRadius
-                                var dy = -(my - gimbalPad._padCenterY) / gimbalPad._padRadius
-                                var dist = Math.sqrt(dx * dx + dy * dy)
-                                if (dist > 1) { dx /= dist; dy /= dist }
-                                gimbalPad._stickX = dx
-                                gimbalPad._stickY = dy
-                                _root._applyGimbal(dx, dy)
-                            }
-                        }
-                    }
-
-                    // Gimbal angle display
-                    QGCLabel {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: {
-                            var pitch = _hasGimbal ? _activeGimbal.absolutePitch : _mockGimbalPitch
-                            var yaw   = _hasGimbal ? _activeGimbal.absoluteYaw : _mockGimbalYaw
-                            return "P:" + Math.round(pitch) + " Y:" + Math.round(yaw)
-                        }
-                        font.pointSize:     ScreenTools.smallFontPointSize
-                        color:              qgcPal.text
-                    }
-
-                    // HOME (reset) button
-                    Rectangle {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width:                  _smallButtonSize * 1.3
-                        height:                 _smallButtonSize * 0.65
-                        radius:                 ScreenTools.defaultFontPixelWidth * 0.3
-                        color:                  homeMA.pressed ? qgcPal.buttonHighlight : qgcPal.button
-                        border.width:           1
-                        border.color:           qgcPal.buttonText
-
-                        QGCLabel {
-                            anchors.centerIn:   parent
-                            text:               qsTr("RST")
-                            font.pointSize:     ScreenTools.smallFontPointSize
-                            font.bold:          true
-                            color:              qgcPal.buttonText
-                        }
-
-                        MouseArea {
-                            id:             homeMA
-                            anchors.fill:   parent
-                            onClicked: {
-                                gimbalPad._stickX = 0
-                                gimbalPad._stickY = 0
-                                _mockGimbalPitch = 0
-                                _mockGimbalYaw = 0
-                                if (_hasGimbal) {
-                                    _gimbalController.gimbalOnScreenControl(0, 0, true, false, false)
-                                } else if (_activeVehicle) {
-                                    // Direct MAVLink: reset gimbal to 0,0
-                                    // flags: ROLL_LOCK(4) | PITCH_LOCK(8) | YAW_IN_VEHICLE_FRAME(32) = 44
-                                    _activeVehicle.sendCommand(1, 287, false, 0, 0, NaN, NaN, 44, 0, 0)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Separator
-                Rectangle { width: parent.width; height: 1; color: Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.3) }
-
-                // Tracking toggle
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width:              _smallButtonSize * 1.3
-                    height:             _smallButtonSize * 0.65
-                    radius:             ScreenTools.defaultFontPixelWidth * 0.3
-                    color:              _trackingEnabled ? qgcPal.colorGreen : (trkMA.pressed ? qgcPal.buttonHighlight : qgcPal.button)
-                    border.width:       1
-                    border.color:       qgcPal.buttonText
-
-                    QGCLabel {
-                        anchors.centerIn:   parent
-                        text:               qsTr("TRK")
-                        font.pointSize:     ScreenTools.smallFontPointSize
-                        font.bold:          true
-                        color:              _trackingEnabled ? "white" : qgcPal.buttonText
-                    }
-
-                    MouseArea {
-                        id:             trkMA
-                        anchors.fill:   parent
-                        onClicked: {
-                            if (_hasRealCamera) {
-                                _camera.trackingEnabled = !_camera.trackingEnabled
-                            } else {
-                                _mockTrackingEnabled = !_mockTrackingEnabled
-                            }
-                        }
-                    }
-                }
-
-                // B&W filter toggle
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width:              _smallButtonSize * 1.3
-                    height:             _smallButtonSize * 0.65
-                    radius:             ScreenTools.defaultFontPixelWidth * 0.3
-                    color:              bwFilterEnabled ? qgcPal.colorGreen : (bwMA.pressed ? qgcPal.buttonHighlight : qgcPal.button)
-                    border.width:       1
-                    border.color:       qgcPal.buttonText
-
-                    QGCLabel {
-                        anchors.centerIn:   parent
-                        text:               qsTr("B/W")
-                        font.pointSize:     ScreenTools.smallFontPointSize
-                        font.bold:          true
-                        color:              bwFilterEnabled ? "white" : qgcPal.buttonText
-                    }
-
-                    MouseArea {
-                        id:             bwMA
-                        anchors.fill:   parent
-                        onClicked:      bwFilterEnabled = !bwFilterEnabled
-                    }
-                }
-
-                // Separator
-                Rectangle { width: parent.width; height: 1; color: Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.3) }
-
                 // Settings gear
                 QGCColoredImage {
                     anchors.horizontalCenter: parent.horizontalCenter
@@ -973,48 +590,6 @@ Item {
             _mockZoomLevel = Math.min(100, _mockZoomLevel + 10)
         } else {
             _mockZoomLevel = Math.max(0, _mockZoomLevel - 10)
-        }
-    }
-
-    // Gimbal step (discrete): sends MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW (287) directly
-    // as fallback when gimbal not detected via gimbal manager protocol
-    function _gimbalStep(dx, dy) {
-        if (_hasGimbal) {
-            _gimbalController.gimbalOnScreenControl(dx, dy, true, false, false)
-        } else if (_activeVehicle) {
-            // Direct MAVLink fallback: send pitch/yaw angle increment
-            // MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW: param1=pitch, param2=yaw, param5=flags, param7=deviceId
-            var pitchInc = dy * 15   // degrees per step
-            var yawInc   = dx * 15
-            var currentPitch = _mockGimbalPitch
-            var currentYaw   = _mockGimbalYaw
-            var newPitch = Math.max(-90, Math.min(45, currentPitch + pitchInc))
-            var newYaw   = Math.max(-180, Math.min(180, currentYaw + yawInc))
-            // flags: ROLL_LOCK(4) | PITCH_LOCK(8) | YAW_IN_VEHICLE_FRAME(32) = 44
-            _activeVehicle.sendCommand(1, 287, false, newPitch, newYaw, NaN, NaN, 44, 0, 0)
-            _mockGimbalPitch = newPitch
-            _mockGimbalYaw   = newYaw
-        } else {
-            _mockGimbalYaw   = Math.max(-180, Math.min(180, _mockGimbalYaw   + dx * 45))
-            _mockGimbalPitch = Math.max(-90,  Math.min(90,  _mockGimbalPitch + dy * 45))
-        }
-    }
-
-    // Gimbal drag (continuous): sends gimbal commands from pad drag
-    function _applyGimbal(dx, dy) {
-        if (_hasGimbal) {
-            _gimbalController.gimbalOnScreenControl(dx, dy, false, true, true)
-        } else if (_activeVehicle) {
-            // Direct MAVLink: map pad position to absolute angle
-            var pitch = dy * 45    // ±45 deg range
-            var yaw   = dx * 90    // ±90 deg range
-            // flags: ROLL_LOCK(4) | PITCH_LOCK(8) | YAW_IN_VEHICLE_FRAME(32) = 44
-            _activeVehicle.sendCommand(1, 287, false, pitch, yaw, NaN, NaN, 44, 0, 0)
-            _mockGimbalPitch = pitch
-            _mockGimbalYaw   = yaw
-        } else {
-            _mockGimbalYaw   = Math.max(-180, Math.min(180, dx * 180))
-            _mockGimbalPitch = Math.max(-90,  Math.min(90,  dy * 90))
         }
     }
 

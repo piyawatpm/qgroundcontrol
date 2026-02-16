@@ -65,7 +65,8 @@ bool is_hardware_decoder_factory(GstElementFactory *factory)
         QStringLiteral("d3d"),     // direct3d
         QStringLiteral("dxva"),    // directx video accel
         QStringLiteral("vtdec"),   // apple video toolbox
-        QStringLiteral("metal")    // metal-based decoders
+        QStringLiteral("metal"),   // metal-based decoders
+        QStringLiteral("amc")      // android mediacodec (vendor hw decoders)
     };
 
     for (const QString &tag : kHardwareTags) {
