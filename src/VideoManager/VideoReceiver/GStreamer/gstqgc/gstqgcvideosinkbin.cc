@@ -10,7 +10,7 @@ GST_DEBUG_CATEGORY_STATIC(GST_CAT_DEFAULT);
 #define DEFAULT_FORCE_ASPECT_RATIO TRUE
 #define DEFAULT_PAR_N 0
 #define DEFAULT_PAR_D 1
-#define DEFAULT_SYNC TRUE
+#define DEFAULT_SYNC FALSE
 
 #define PROP_ENABLE_LAST_SAMPLE_NAME    "enable-last-sample"
 #define PROP_LAST_SAMPLE_NAME           "last-sample"
@@ -153,13 +153,27 @@ gst_qgc_video_sink_bin_init(GstQgcVideoSinkBin *self)
         return;
     }
 
+    // Set low-latency properties directly on qml6glsink (inner sink)
+    g_object_set(self->qmlglsink,
+                 PROP_SYNC_NAME, FALSE,
+                 "async", FALSE,
+                 "max-lateness", (gint64) -1,
+                 "qos", TRUE,
+                 PROP_ENABLE_LAST_SAMPLE_NAME, FALSE,
+                 "processing-deadline", (guint64) 0,
+                 "throttle-time", (guint64) 0,        // no throttling between frames
+                 "render-delay", (guint64) 0,          // no render delay
+                 NULL);
+
+    // Also set on glsinkbin (outer wrapper) for consistency
     g_object_set(self->glsinkbin,
                  "sink", self->qmlglsink,
                  PROP_ENABLE_LAST_SAMPLE_NAME, FALSE,
-                 "async", FALSE,                      // skip preroll wait for faster startup
-                 "max-lateness", (gint64) 20000000,   // drop frames arriving >20ms late
-                 "qos", TRUE,                         // QoS events: tell upstream to drop when behind
-                 "processing-deadline", (guint64) 0,  // no additional processing deadline
+                 "async", FALSE,
+                 PROP_SYNC_NAME, FALSE,
+                 "max-lateness", (gint64) -1,
+                 "qos", TRUE,
+                 "processing-deadline", (guint64) 0,
                  NULL);
 
     g_return_if_fail(gst_bin_add(GST_BIN(self), self->glsinkbin));

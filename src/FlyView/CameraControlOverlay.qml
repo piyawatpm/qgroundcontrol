@@ -404,6 +404,14 @@ Item {
                     }
                 }
 
+                // Version label
+                QGCLabel {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text:               "v1.01"
+                    font.pointSize:     ScreenTools.smallFontPointSize * 0.85
+                    color:              Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.5)
+                }
+
             }
         }
     }

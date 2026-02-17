@@ -62,7 +62,6 @@ Item {
         interval:   250
         onTriggered: {
             _holdDetected = true
-            console.log("[VIDEO] Hold detected at " + _pressStartX.toFixed(0) + "," + _pressStartY.toFixed(0))
         }
     }
 
@@ -73,7 +72,6 @@ Item {
         repeat:     true
         onTriggered: {
             if (_isGimbalDragging) {
-                console.log("[VIDEO] Gimbal repeat dx=" + _dragDx.toFixed(2) + " dy=" + _dragDy.toFixed(2))
                 _gimbalStep(_dragDx, _dragDy)
             }
         }
@@ -241,30 +239,21 @@ Item {
             rotation:       _dragAngle
         }
 
-        // Arrow head (triangle rotated to drag angle)
+        // Arrow head (triangle rotated to drag angle via rotation)
         Item {
             x:              _pressStartX
             y:              _pressStartY
             rotation:       _dragAngle
 
-            // Arrowhead at the end of the line
-            Canvas {
-                id:     arrowHead
-                x:      Math.min(_dragDist, ScreenTools.defaultFontPixelHeight * 4) - 8
-                y:      -8
-                width:  16
-                height: 16
-                onPaint: {
-                    var ctx = getContext("2d")
-                    ctx.clearRect(0, 0, width, height)
-                    ctx.fillStyle = Qt.rgba(0.2, 1.0, 0.2, 0.9)
-                    ctx.beginPath()
-                    ctx.moveTo(16, 8)    // tip pointing right
-                    ctx.lineTo(0, 0)     // top-left
-                    ctx.lineTo(0, 16)    // bottom-left
-                    ctx.closePath()
-                    ctx.fill()
-                }
+            // Simple arrowhead using rotated rectangle (avoids expensive Canvas onPaint)
+            Rectangle {
+                x:      Math.min(_dragDist, ScreenTools.defaultFontPixelHeight * 4) - 6
+                y:      -6
+                width:  12
+                height: 12
+                color:  Qt.rgba(0.2, 1.0, 0.2, 0.9)
+                rotation: 45
+                antialiasing: true
             }
         }
     }
@@ -296,7 +285,6 @@ Item {
         onDoubleClicked: QGroundControl.videoManager.fullScreen = !QGroundControl.videoManager.fullScreen
 
         onPressed:(mouse) => {
-            console.log("[VIDEO] Pressed at " + mouse.x.toFixed(0) + "," + mouse.y.toFixed(0))
             onScreenGimbalController.pressControl()
 
             // Record press point for gesture detection
@@ -364,14 +352,12 @@ Item {
                         _isGimbalDragging = true
                         _gimbalStep(_dragDx, _dragDy)
                         gimbalDragTimer.start()
-                        console.log("[VIDEO] Gimbal drag started, angle=" + _dragAngle.toFixed(1))
                     }
                 }
             }
         }
 
         onReleased: (mouse) => {
-            console.log("[VIDEO] Released, holdDetected=" + _holdDetected + " dragging=" + _isGimbalDragging)
             onScreenGimbalController.releaseControl()
             holdDetectTimer.stop()
 
@@ -381,7 +367,6 @@ Item {
                 _isGimbalDragging = false
                 _dragDist = 0
                 _dragAngle = 0
-                console.log("[VIDEO] Gimbal drag stopped")
             }
 
             // TAP detection: short press, small movement, no tracking
@@ -390,7 +375,6 @@ Item {
             var moved = Math.sqrt(dx * dx + dy * dy)
 
             if (!_holdDetected && moved < 15 && trackingROI === null) {
-                console.log("[VIDEO] TAP detected -> focus at " + mouse.x.toFixed(0) + "," + mouse.y.toFixed(0))
                 _showFocusSquare(mouse.x, mouse.y)
                 _autoFocus()
             }
@@ -468,7 +452,7 @@ Item {
             id: trackingStatusTimer
             interval:               50
             repeat:                 true
-            running:                true
+            running:                videoStreaming._camera && videoStreaming._camera.trackingEnabled
             onTriggered: {
                 if (videoStreaming._camera) {
                     if (videoStreaming._camera.trackingEnabled && videoStreaming._camera.trackingImageStatus) {
@@ -526,14 +510,10 @@ Item {
             var compId = camera ? camera.compID : 1
             // MAV_CMD_SET_CAMERA_FOCUS (532), param1=4 (FOCUS_TYPE_AUTO)
             _activeVehicle.sendCommand(compId, 532, false, 4, 0)
-            console.log("[VIDEO] Auto-focus command sent (compId=" + compId + ")")
-        } else {
-            console.log("[VIDEO] Auto-focus (mock - no vehicle)")
         }
     }
 
     function _gimbalStep(dx, dy) {
-        console.log("[VIDEO] _gimbalStep dx=" + dx.toFixed(2) + " dy=" + dy.toFixed(2) + " hasGimbal=" + _hasGimbal)
         if (_hasGimbal) {
             _gimbalController.gimbalOnScreenControl(dx, dy, true, false, false)
         } else if (_activeVehicle) {
@@ -541,8 +521,6 @@ Item {
             var yawInc   = dx * 15
             // flags: ROLL_LOCK(4) | PITCH_LOCK(8) | YAW_IN_VEHICLE_FRAME(32) = 44
             _activeVehicle.sendCommand(1, 287, false, pitchInc, yawInc, NaN, NaN, 44, 0, 0)
-        } else {
-            console.log("[VIDEO] Gimbal step (mock - no vehicle)")
         }
     }
 }
