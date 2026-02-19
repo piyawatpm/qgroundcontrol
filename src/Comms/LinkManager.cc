@@ -63,6 +63,16 @@ LinkManager::LinkManager(QObject *parent)
 
 LinkManager::~LinkManager()
 {
+    // Disconnect all signals from links to this manager before the link list
+    // is destroyed. Otherwise UDPLink::~UDPLink() emits disconnected() which
+    // triggers _linkDisconnected() which accesses MAVLinkProtocol::instance()
+    // — a singleton that may already be destroyed at this point (static
+    // destruction order issue).
+    for (const auto &link : _rgLinks) {
+        QObject::disconnect(link.get(), nullptr, this, nullptr);
+    }
+    _rgLinks.clear();
+
     qCDebug(LinkManagerLog) << this;
 }
 

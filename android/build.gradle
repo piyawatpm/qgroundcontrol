@@ -42,14 +42,13 @@ android {
      * Changing them manually might break the compilation!
      *******************************************************/
 
-    // namespace = androidPackageName
     namespace = "org.mavlink.qgroundcontrol"
     compileSdkVersion androidCompileSdkVersion
     buildToolsVersion androidBuildToolsVersion
     ndkVersion = androidNdkVersion
 
     // Extract native libraries from the APK
-    // packagingOptions.jniLibs.useLegacyPackaging = true
+    packagingOptions.jniLibs.useLegacyPackaging = true
 
     sourceSets {
         main {
@@ -88,13 +87,14 @@ android {
     }
 
     defaultConfig {
+        applicationId "com.cloudtronics.qgc.dev"
         resConfig "en"
         minSdkVersion qtMinSdkVersion
         targetSdkVersion qtTargetSdkVersion
         ndk.abiFilters = qtTargetAbiList.split(",")
 
         println "timestamp: " + getTimestampStr()
-        // println "applicationId: ${applicationId}"
+        println "applicationId: ${applicationId}"
         println "minSdkVersion: ${minSdkVersion}"
         println "targetSdkVersion: ${targetSdkVersion}"
         println "ndk.abiFilters: ${ndk.abiFilters}"
@@ -118,5 +118,7 @@ android {
         exclude 'lib/*/*_Controls_Imagine_*'
         exclude 'lib/*/*_Controls_Material_*'
         exclude 'lib/*/*_Controls_Universal_*'
+        // Exclude plugins that crash during JNI_OnLoad (QGC doesn't use WebView)
+        exclude 'lib/*/*webview*'
     }
 }

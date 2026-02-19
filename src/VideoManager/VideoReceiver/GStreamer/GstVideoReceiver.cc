@@ -1247,14 +1247,13 @@ gboolean GstVideoReceiver::_onBusMessage(GstBus * /* bus */, GstMessage *msg, gp
         GError *error;
         gst_message_parse_error(msg, &error, &debug);
 
-        if (debug) {
-            qCDebug(GstVideoReceiverLog) << "GStreamer debug:" << debug;
-            g_clear_pointer(&debug, g_free);
+        if (error) {
+            qCCritical(GstVideoReceiverLog) << "GStreamer error:" << error->message << (debug ? debug : "");
+            g_clear_error(&error);
         }
 
-        if (error) {
-            qCCritical(GstVideoReceiverLog) << "GStreamer error:" << error->message;
-            g_clear_error(&error);
+        if (debug) {
+            g_clear_pointer(&debug, g_free);
         }
 
         pThis->_worker->dispatch([pThis]() {

@@ -13,6 +13,7 @@
 #include "ADSBVehicleManager.h"
 #include "MissionCommandTree.h"
 #include "VideoManager.h"
+#include "ViewLinkController.h"
 #include "MultiVehicleManager.h"
 #include "QGCLoggingCategory.h"
 #ifndef QGC_NO_SERIAL_LINK
@@ -42,6 +43,7 @@ QGroundControlQmlGlobal::QGroundControlQmlGlobal(QObject *parent)
     , _multiVehicleManager(MultiVehicleManager::instance())
     , _settingsManager(SettingsManager::instance())
     , _corePlugin(QGCCorePlugin::instance())
+    , _viewLinkController(ViewLinkController::instance())
     , _globalPalette(new QGCPalette(this))
 #ifndef QGC_NO_SERIAL_LINK
     , _gpsRtkFactGroup(GPSManager::instance()->gpsRtk()->gpsRtkFactGroup())
