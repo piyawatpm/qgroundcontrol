@@ -97,35 +97,11 @@ Item {
             font.pixelSize: 11
             font.bold: true
             color: "#CCCCCC"
-            text: "v1.11"
+            text: "v1.12"
         }
     }
 
-    // ═════════════════════════════════════════════════════════════
-    //  CONNECTION STATUS (top-left, always visible)
-    // ═════════════════════════════════════════════════════════════
-    Rectangle {
-        z: 20
-        anchors {
-            top:        parent.top
-            left:       parent.left
-            topMargin:  _margin
-            leftMargin: _margin
-        }
-        width:  connLabel.implicitWidth + _margin * 2
-        height: connLabel.implicitHeight + _margin
-        radius: _margin * 0.5
-        color:  "#AA000000"
-
-        Text {
-            id: connLabel
-            anchors.centerIn: parent
-            font.pixelSize: _fontSize * 0.85
-            font.bold: true
-            color: _vl && _vl.connected ? "#33FF33" : "#FF4444"
-            text:  _vl && _vl.connected ? "CAM CONNECTED" : "CAM DISCONNECTED"
-        }
-    }
+    // CONNECTION STATUS label removed (v1.11)
 
     // ═════════════════════════════════════════════════════════════
     //  FULL-SCREEN TOUCH AREA

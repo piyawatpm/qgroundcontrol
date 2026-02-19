@@ -16,6 +16,6 @@ RowLayout {
     FlyViewInstrumentPanel {
         id:                 instrumentPanel
         Layout.alignment:   Qt.AlignBottom
-        visible:            QGroundControl.corePlugin.options.flyView.showInstrumentPanel && _showSingleVehicleUI
+        visible:            false // Compass hidden — using custom Viewpro overlay instead
     }
 }
