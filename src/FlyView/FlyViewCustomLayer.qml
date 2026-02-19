@@ -33,6 +33,7 @@ Item {
     property real _joyPitch:    0
     property real _joyYaw:      0
     property bool _dragging:    false
+    property int  _touchCount:  0
 
     // ── Camera source table ──────────────────────────────────────
     readonly property var _sources: [
@@ -69,47 +70,34 @@ Item {
     }
 
     Component.onCompleted: {
-        console.warn("VP LAYER: ===== FlyViewCustomLayer LOADED =====")
-        console.warn("VP LAYER: _root size =", _root.width, "x", _root.height)
-        console.warn("VP LAYER: _root visible =", _root.visible)
-        console.warn("VP LAYER: _vl =", _vl)
-        console.warn("VP LAYER: _vl.connected =", _vl ? _vl.connected : "null")
         if (_vl && !_vl.connected) {
-            console.warn("VP LAYER: Auto-connecting to 192.168.144.119:2000")
             _vl.connectToCamera("192.168.144.119", 2000)
         }
     }
 
-    onWidthChanged:   console.warn("VP LAYER: width changed to", width)
-    onHeightChanged:  console.warn("VP LAYER: height changed to", height)
-    onVisibleChanged: console.warn("VP LAYER: visible changed to", visible)
-
     // ═════════════════════════════════════════════════════════════
-    //  DEBUG INDICATOR (bright yellow, top-right corner)
-    //  This proves the QML is loaded and has size
+    //  VERSION LABEL (top-right corner)
     // ═════════════════════════════════════════════════════════════
     Rectangle {
         z: 100
         anchors {
             top:        parent.top
             right:      parent.right
-            topMargin:  2
-            rightMargin: 2
+            topMargin:  4
+            rightMargin: 4
         }
-        width:  debugLabel.implicitWidth + 10
-        height: debugLabel.implicitHeight + 6
+        width:  versionLabel.implicitWidth + 12
+        height: versionLabel.implicitHeight + 6
         radius: 4
-        color:  "#CCFFFF00"
+        color:  "#88000000"
 
         Text {
-            id: debugLabel
+            id: versionLabel
             anchors.centerIn: parent
             font.pixelSize: 11
             font.bold: true
-            color: "black"
-            text: "VP:" + _root.width.toFixed(0) + "x" + _root.height.toFixed(0)
-                  + " T:" + touchCount
-            property int touchCount: 0
+            color: "#CCCCCC"
+            text: "v1.11"
         }
     }
 
@@ -161,8 +149,7 @@ Item {
             pressX  = mouse.x
             pressY  = mouse.y
             didDrag = false
-            debugLabel.touchCount++
-            console.warn("VP TOUCH: PRESSED at (" + mouse.x.toFixed(0) + ", " + mouse.y.toFixed(0) + ") touchCount=" + debugLabel.touchCount)
+            _touchCount++
 
             // Show press indicator
             pressIndicator.x = mouse.x - pressIndicator.width / 2
@@ -184,7 +171,6 @@ Item {
             if (!didDrag) {
                 didDrag    = true
                 _dragging  = true
-                console.warn("VP TOUCH: DRAG started from (" + pressX.toFixed(0) + ", " + pressY.toFixed(0) + ")")
             }
 
             // Update drag line visual
@@ -204,38 +190,27 @@ Item {
         }
 
         onReleased: (mouse) => {
-            console.warn("VP TOUCH: RELEASED at (" + mouse.x.toFixed(0) + ", " + mouse.y.toFixed(0) + ") didDrag=" + didDrag)
-
             dragLine.visible = false
             pressIndicator.opacity = 0
 
             if (didDrag) {
-                // Was dragging → stop gimbal
-                console.warn("VP TOUCH: DRAG ended → gimbalSpeed(0, 0)")
                 _joyYaw   = 0
                 _joyPitch = 0
                 _dragging = false
                 if (_vl) _vl.gimbalSpeed(0, 0)
             } else {
-                // Was a tap
                 if (_trackMode) {
-                    // Track mode: send track point
                     var nx = mouse.x / _root.width
                     var ny = mouse.y / _root.height
-                    console.warn("VP TOUCH: TAP → trackPoint(" + nx.toFixed(3) + ", " + ny.toFixed(3) + ")")
                     if (_vl) _vl.trackPoint(nx, ny)
                     _trackMode = false
                 } else {
-                    // Normal tap: auto-focus
-                    console.warn("VP TOUCH: TAP → autoFocus()")
                     if (_vl) _vl.autoFocus()
                 }
 
-                // Show tap ring animation
                 tapRing.x = mouse.x - tapRing.width / 2
                 tapRing.y = mouse.y - tapRing.height / 2
                 tapRingAnim.restart()
-                console.warn("VP TOUCH: tap ring animation started at (" + mouse.x.toFixed(0) + ", " + mouse.y.toFixed(0) + ")")
             }
         }
     }
@@ -404,9 +379,9 @@ Item {
                 fontPx: _btnH * 0.5
                 bold: true
                 onHeldChanged: {
-                    if (!_vl) { console.warn("VP BTN: no _vl for zoom"); return }
-                    if (held) { console.warn("VP BTN: zoomOut(4)"); _vl.zoomOut(4) }
-                    else      { console.warn("VP BTN: zoomStop()"); _vl.zoomStop() }
+                    if (!_vl) return
+                    if (held) _vl.zoomOut(4)
+                    else      _vl.zoomStop()
                 }
             }
             VPBtn {
@@ -414,9 +389,9 @@ Item {
                 fontPx: _btnH * 0.5
                 bold: true
                 onHeldChanged: {
-                    if (!_vl) { console.warn("VP BTN: no _vl for zoom"); return }
-                    if (held) { console.warn("VP BTN: zoomIn(4)"); _vl.zoomIn(4) }
-                    else      { console.warn("VP BTN: zoomStop()"); _vl.zoomStop() }
+                    if (!_vl) return
+                    if (held) _vl.zoomIn(4)
+                    else      _vl.zoomStop()
                 }
             }
 
@@ -425,10 +400,7 @@ Item {
             // ── Capture ──
             VPBtn {
                 label: "PHOTO"
-                onClicked: {
-                    console.warn("VP BTN: takePhoto()")
-                    if (_vl) _vl.takePhoto()
-                }
+                onClicked: { if (_vl) _vl.takePhoto() }
             }
             VPBtn {
                 label: _recording ? "STOP" : "REC"
@@ -436,13 +408,8 @@ Item {
                 litColor: "#DD3333"
                 onClicked: {
                     if (!_vl) return
-                    if (_recording) {
-                        console.warn("VP BTN: stopRecord()")
-                        _vl.stopRecord()
-                    } else {
-                        console.warn("VP BTN: startRecord()")
-                        _vl.startRecord()
-                    }
+                    if (_recording) _vl.stopRecord()
+                    else            _vl.startRecord()
                     _recording = !_recording
                 }
             }
@@ -456,17 +423,13 @@ Item {
                 onClicked: {
                     if (!_vl) return
                     _srcIdx = (_srcIdx + 1) % _sources.length
-                    console.warn("VP BTN: setVideoSource(" + _sources[_srcIdx].id + ") → " + _sources[_srcIdx].label)
                     _vl.setVideoSource(_sources[_srcIdx].id)
                 }
             }
             VPBtn {
                 label: "AF"
                 fontPx: _fontSize * 1.1
-                onClicked: {
-                    console.warn("VP BTN: autoFocus()")
-                    if (_vl) _vl.autoFocus()
-                }
+                onClicked: { if (_vl) _vl.autoFocus() }
             }
 
             BarSep {}
@@ -474,10 +437,7 @@ Item {
             // ── Gimbal & tracking ──
             VPBtn {
                 label: "HOME"
-                onClicked: {
-                    console.warn("VP BTN: gimbalHome()")
-                    if (_vl) _vl.gimbalHome()
-                }
+                onClicked: { if (_vl) _vl.gimbalHome() }
             }
             VPBtn {
                 label: "TRK"
@@ -486,11 +446,9 @@ Item {
                 litColor: "#33CC33"
                 onClicked: {
                     if (_trackMode) {
-                        console.warn("VP BTN: trackStop()")
                         if (_vl) _vl.trackStop()
                     }
                     _trackMode = !_trackMode
-                    console.warn("VP BTN: trackMode = " + _trackMode)
                 }
             }
         }
@@ -532,10 +490,7 @@ Item {
         MouseArea {
             id: _vpMa
             anchors.fill: parent
-            onClicked: {
-                console.warn("VP BTN: '" + _vpBtn.label + "' clicked")
-                _vpBtn.clicked()
-            }
+            onClicked: _vpBtn.clicked()
         }
     }
 

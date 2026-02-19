@@ -1,8 +1,11 @@
 #include "GStreamerHelpers.h"
 
 #include <gst/rtsp/gstrtspurl.h>
+#include <QtCore/QLoggingCategory>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
+
+Q_DECLARE_LOGGING_CATEGORY(GStreamerLog)
 
 namespace GStreamer
 {
@@ -40,18 +43,24 @@ bool is_hardware_decoder_factory(GstElementFactory *factory)
     // Exclude Android software decoders (OMXGoogle / C2Android)
     QString name = QString::fromUtf8(factoryName).toLower();
     if (name.startsWith("amcviddec-omxgoogle") || name.startsWith("amcviddec-c2android")) {
+        qCWarning(GStreamerLog) << "  HW check:" << factoryName << "-> SOFTWARE (excluded Android SW wrapper)";
         return false;
     }
+
+    const gchar *metaKlass = gst_element_factory_get_metadata(factory, GST_ELEMENT_METADATA_KLASS);
+    const gchar *factoryKlass = gst_element_factory_get_klass(factory);
 
     const auto containsHardware = [](const gchar *value) {
         return value && (g_strrstr(value, "Hardware") != nullptr || g_strrstr(value, "hardware") != nullptr);
     };
 
-    if (containsHardware(gst_element_factory_get_metadata(factory, GST_ELEMENT_METADATA_KLASS))) {
+    if (containsHardware(metaKlass)) {
+        qCWarning(GStreamerLog) << "  HW check:" << factoryName << "-> HARDWARE (metadata klass:" << metaKlass << ")";
         return true;
     }
 
-    if (containsHardware(gst_element_factory_get_klass(factory))) {
+    if (containsHardware(factoryKlass)) {
+        qCWarning(GStreamerLog) << "  HW check:" << factoryName << "-> HARDWARE (factory klass:" << factoryKlass << ")";
         return true;
     }
 
@@ -65,15 +74,18 @@ bool is_hardware_decoder_factory(GstElementFactory *factory)
         QStringLiteral("d3d"),     // direct3d
         QStringLiteral("dxva"),    // directx video accel
         QStringLiteral("vtdec"),   // apple video toolbox
-        QStringLiteral("metal")    // metal-based decoders
+        QStringLiteral("metal"),   // metal-based decoders
+        QStringLiteral("amc")      // android mediacodec (amcviddec-*)
     };
 
     for (const QString &tag : kHardwareTags) {
-        if (nameLower.contains(tag)) {
+        if (nameLower.startsWith(tag)) {
+            qCWarning(GStreamerLog) << "  HW check:" << factoryName << "-> HARDWARE (name prefix:" << tag << ")";
             return true;
         }
     }
 
+    qCWarning(GStreamerLog) << "  HW check:" << factoryName << "-> SOFTWARE (no match, klass:" << factoryKlass << ")";
     return false;
 }
 

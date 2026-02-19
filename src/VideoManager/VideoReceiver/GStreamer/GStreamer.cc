@@ -60,7 +60,11 @@ void _registerPlugins()
 {
 #ifdef QGC_GST_STATIC_BUILD
     #ifdef GST_PLUGIN_androidmedia_FOUND
+        qCWarning(GStreamerLog) << "Registering androidmedia plugin...";
         GST_PLUGIN_STATIC_REGISTER(androidmedia);
+        qCWarning(GStreamerLog) << "androidmedia plugin registered OK";
+    #else
+        qCWarning(GStreamerLog) << "androidmedia plugin NOT FOUND at build time!";
     #endif
     #ifdef GST_PLUGIN_applemedia_FOUND
         GST_PLUGIN_STATIC_REGISTER(applemedia);
@@ -310,7 +314,7 @@ void _logDecoderRanks()
         return lhsRank > rhsRank ? -1 : 1;
     });
 
-    qCDebug(GStreamerDecoderRanksLog) << "Video decoder plugin ranks:";
+    qCWarning(GStreamerLog) << "=== ALL VIDEO DECODERS (before priority change) ===";
     for (GList *node = decoderFactories; node != nullptr; node = node->next) {
         GstElementFactory *factory = GST_ELEMENT_FACTORY(node->data);
         if (!factory) {
@@ -324,10 +328,10 @@ void _logDecoderRanks()
 
         GstPlugin *plugin = gst_plugin_feature_get_plugin(feature);
         if (plugin) {
-            qCDebug(GStreamerDecoderRanksLog) << "  " << gst_plugin_get_name(plugin) << "/" << featureName << "-" << decoderKlass << ":" << rank;
+            qCWarning(GStreamerLog) << "  " << gst_plugin_get_name(plugin) << "/" << featureName << "-" << decoderKlass << ":" << rank;
             gst_object_unref(plugin);
         } else {
-            qCDebug(GStreamerDecoderRanksLog) << "  " << featureName << "-" << decoderKlass << ":" << rank;
+            qCWarning(GStreamerLog) << "  " << featureName << "-" << decoderKlass << ":" << rank;
         }
     }
 
@@ -336,7 +340,9 @@ void _logDecoderRanks()
 
 void _lowerSoftwareDecoderRanks(GstRegistry *registry)
 {
-    static constexpr uint16_t NewRank  = GST_RANK_NONE;
+    // Use MARGINAL (64) instead of NONE (0) so decodebin3 can still fall back
+    // to software if hardware decoder's output format can't link to the GL sink.
+    static constexpr uint16_t NewRank  = GST_RANK_MARGINAL;
     if (!registry) {
         qCCritical(GStreamerLog) << "Invalid registry!";
         return;
@@ -348,7 +354,7 @@ void _lowerSoftwareDecoderRanks(GstRegistry *registry)
     for (const char *name : softDecoders) {
         GstPluginFeature *feature = gst_registry_lookup_feature(registry, name);
         if (feature) {
-            qCDebug(GStreamerLog) << "Setting software decoder rank low:" << name << " rank:" << NewRank;
+            qCWarning(GStreamerLog) << "  Lowering software decoder:" << name << " rank:" << NewRank << "(MARGINAL)";
             gst_plugin_feature_set_rank(feature, NewRank);
             gst_object_unref(feature);
         } else {
@@ -413,9 +419,11 @@ void _prioritizeByHardwareClass(GstRegistry *registry, uint16_t prioritizedRank,
         ++matchedFactories;
     }
 
+    qCWarning(GStreamerLog) << "  Matched" << matchedFactories << (requireHardware ? "hardware" : "software")
+                           << "decoders, raised to rank" << prioritizedRank;
     if (matchedFactories == 0) {
-        qCWarning(GStreamerLog) << "No" << (requireHardware ? "hardware" : "software")
-                               << "video decoder factories found to reprioritize.";
+        qCWarning(GStreamerLog) << "  WARNING: No" << (requireHardware ? "hardware" : "software")
+                               << "video decoder factories found to reprioritize!";
     }
 
    // Lower software decoder rank when using hardware decoders
@@ -537,7 +545,43 @@ bool initialize()
     }
 
     _logDecoderRanks();
-    _setCodecPriorities(static_cast<GStreamer::VideoDecoderOptions>(SettingsManager::instance()->videoSettings()->forceVideoDecoder()->rawValue().toInt()));
+
+    const int decoderOption = SettingsManager::instance()->videoSettings()->forceVideoDecoder()->rawValue().toInt();
+    qCWarning(GStreamerLog) << "=== VIDEO DECODER CONFIG === forceVideoDecoder:" << decoderOption
+                            << (decoderOption == 0 ? "(Default)" :
+                               decoderOption == 1 ? "(Software)" :
+                               decoderOption == 8 ? "(Hardware)" : "(Other)");
+    _setCodecPriorities(static_cast<GStreamer::VideoDecoderOptions>(decoderOption));
+
+    // Dump final decoder ranks (always visible in logcat for debugging)
+    {
+        GstRegistry *reg = gst_registry_get();
+        const char *checkDecoders[] = {"avdec_h264", "amcviddec-omxqcomvideodecoderavc",
+            "amcviddec-c2qabortvideodecoderavc", "amcviddec-c2androidavccodecdecoder",
+            "amcviddec-omxgabortvideodecoderavc", "vtdec_hw", "vtdec"};
+        for (const char *name : checkDecoders) {
+            GstPluginFeature *f = gst_registry_lookup_feature(reg, name);
+            if (f) {
+                qCWarning(GStreamerLog) << "  DECODER RANK:" << name << "=" << gst_plugin_feature_get_rank(f);
+                gst_object_unref(f);
+            }
+        }
+        // Also list any amcviddec decoders dynamically
+        GList *factories = gst_element_factory_list_get_elements(
+            static_cast<GstElementFactoryListType>(GST_ELEMENT_FACTORY_TYPE_DECODER | GST_ELEMENT_FACTORY_TYPE_MEDIA_VIDEO),
+            GST_RANK_NONE);
+        for (GList *n = factories; n; n = n->next) {
+            GstElementFactory *fac = GST_ELEMENT_FACTORY(n->data);
+            const gchar *fn = gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(fac));
+            if (fn && (g_str_has_prefix(fn, "amc") || g_str_has_prefix(fn, "vtdec"))) {
+                bool hw = GStreamer::is_hardware_decoder_factory(fac);
+                qCWarning(GStreamerLog) << "  ANDROID DECODER:" << fn
+                    << "rank:" << gst_plugin_feature_get_rank(GST_PLUGIN_FEATURE(fac))
+                    << (hw ? "(HW)" : "(SW)");
+            }
+        }
+        gst_plugin_feature_list_free(factories);
+    }
 
     GstElement *sink = gst_element_factory_make("qml6glsink", nullptr);
     if (!sink) {

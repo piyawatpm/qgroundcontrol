@@ -60,7 +60,7 @@
     "type":             "uint32",
     "enumStrings":      "Fit Width,Fit Height,Fill,No Crop",
     "enumValues":       "0,1,2,3",
-    "default":     1
+    "default":     0
 },
 {
     "name":             "showRecControl",
@@ -124,7 +124,7 @@
     "shortDesc": "Tweaks video for lower latency",
     "longDesc":  "If this option is enabled, the rtpjitterbuffer is removed and the video sink is set to assynchronous mode, reducing the latency by about 200 ms.",
     "type":             "bool",
-    "default":     false
+    "default":     true
 },
 {
     "name":             "forceVideoDecoder",
@@ -133,7 +133,7 @@
     "type":             "uint32",
     "enumStrings":      "Default,Force software decoder,Force hardware decoder,Force NVIDIA decoder,Force VA-API decoder,Force DirectX3D 11 decoder,Force VideoToolbox decoder,Force Intel decoder,Force Vulkan decoder",
     "enumValues":       "0,1,8,2,3,4,5,6,7",
-    "default":           0,
+    "default":           8,
     "qgcRebootRequired": true
 }
 ]

@@ -22,7 +22,7 @@ Item {
     property bool   _isCamera:          _dynamicCameras ? _dynamicCameras.cameras.count > 0 : false
     property var    _camera:            _isCamera ? _dynamicCameras.cameras.get(_curCameraIndex) : null
     property bool   _hasZoom:           _camera && _camera.hasZoom
-    property int    _fitMode:           QGroundControl.settingsManager.videoSettings.videoFit.rawValue
+    property int    _fitMode:           0 // Fit Width (hardcoded — videoFit setting not accessible without MAVLink camera)
 
     property bool   _isMode_FIT_WIDTH:  _fitMode === 0
     property bool   _isMode_FIT_HEIGHT: _fitMode === 1

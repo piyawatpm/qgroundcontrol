@@ -61,7 +61,12 @@ void GstVideoReceiver::start(uint32_t timeout)
     _timeout = timeout;
     _buffer = lowLatency() ? -1 : 0;
 
-    qCDebug(GstVideoReceiverLog) << "Starting" << _uri << ", lowLatency" << lowLatency() << ", timeout" << _timeout;
+    qCWarning(GstVideoReceiverLog) << "=== PIPELINE START ==="
+        << "uri:" << _uri
+        << "lowLatency:" << lowLatency()
+        << "buffer:" << _buffer
+        << "(jitterBuf:" << (_buffer >= 0 ? "YES" : "SKIPPED") << ")"
+        << "(sync:" << (_buffer >= 0 ? "TRUE" : "FALSE") << ")";
 
     _endOfStream = false;
 
@@ -93,6 +98,19 @@ void GstVideoReceiver::start(uint32_t timeout)
         if (!decoderQueue)  {
             qCCritical(GstVideoReceiverLog) << "gst_element_factory_make('queue') failed";
             break;
+        }
+
+        // Small queue with leak: enough for decoder references, but won't accumulate
+        g_object_set(decoderQueue,
+                     "max-size-buffers", (guint)3,
+                     "max-size-bytes", (guint)0,
+                     "max-size-time", (guint64)0,
+                     "leaky", 2,   // 2 = downstream (drop oldest)
+                     nullptr);
+        {
+            guint maxBuf = 0, leaky = 0;
+            g_object_get(decoderQueue, "max-size-buffers", &maxBuf, "leaky", &leaky, nullptr);
+            qCWarning(GstVideoReceiverLog) << "  Decoder queue: max-size-buffers=" << maxBuf << "leaky=" << leaky;
         }
 
         _decoderValve = gst_element_factory_make("valve", nullptr);
@@ -591,19 +609,23 @@ gboolean GstVideoReceiver::_filterParserCaps(GstElement *bin, GstPad *pad, GstEl
         return FALSE;
     }
 
+    // Allow both byte-stream and length-prefixed formats so hardware decoders
+    // (amcviddec on Android) can negotiate their preferred format.
+    // Previously forced hvc1/avc only, which blocked hardware decoders that
+    // only accept byte-stream.
     GstCaps *sinkCaps = nullptr;
     GstCaps *filter = nullptr;
     GstStructure *structure = gst_caps_get_structure(srcCaps, 0);
     if (gst_structure_has_name(structure, "video/x-h265")) {
         filter = gst_caps_from_string("video/x-h265");
         if (gst_caps_can_intersect(srcCaps, filter)) {
-            sinkCaps = gst_caps_from_string("video/x-h265,stream-format=hvc1");
+            sinkCaps = gst_caps_from_string("video/x-h265,stream-format={byte-stream,hvc1}");
         }
         gst_clear_caps(&filter);
     } else if (gst_structure_has_name(structure, "video/x-h264")) {
         filter = gst_caps_from_string("video/x-h264");
         if (gst_caps_can_intersect(srcCaps, filter)) {
-            sinkCaps = gst_caps_from_string("video/x-h264,stream-format=avc");
+            sinkCaps = gst_caps_from_string("video/x-h264,stream-format={byte-stream,avc}");
         }
         gst_clear_caps(&filter);
     }
@@ -654,8 +676,11 @@ GstElement *GstVideoReceiver::_makeSource(const QString &input)
 
             g_object_set(source,
                          "location", input.toUtf8().constData(),
-                         "latency", 25,
+                         "latency", 0,
+                         "drop-on-latency", TRUE,
+                         "ntp-sync", FALSE,
                          nullptr);
+            qCWarning(GstVideoReceiverLog) << "  rtspsrc: latency=0 drop-on-latency=TRUE ntp-sync=FALSE (UDP default)";
         } else if (isTcpMPEGTS) {
             source = gst_element_factory_make("tcpclientsrc", "source");
             if (!source) {
@@ -752,6 +777,7 @@ GstElement *GstVideoReceiver::_makeSource(const QString &input)
 
         if (probeRes & 1) {
             if ((probeRes & 2) && (_buffer >= 0)) {
+                qCWarning(GstVideoReceiverLog) << "  Adding rtpjitterbuffer (lowLatency OFF)";
                 buffer = gst_element_factory_make("rtpjitterbuffer", nullptr);
                 if (!buffer) {
                     qCCritical(GstVideoReceiverLog) << "gst_element_factory_make('rtpjitterbuffer') failed";
@@ -765,6 +791,7 @@ GstElement *GstVideoReceiver::_makeSource(const QString &input)
                     break;
                 }
             } else {
+                qCWarning(GstVideoReceiverLog) << "  SKIPPING rtpjitterbuffer (lowLatency ON, _buffer=" << _buffer << ")";
                 if (!gst_element_link(source, parser)) {
                     qCCritical(GstVideoReceiverLog) << "gst_element_link() failed";
                     break;
@@ -936,7 +963,8 @@ void GstVideoReceiver::_logDecodebin3SelectedCodec(GstElement *decodebin3)
                     pluginName = gst_plugin_get_name(plugin);
                     gst_object_unref(plugin);
                 }
-                qCDebug(GstVideoReceiverLog) << "Decodebin3 selected codec:rank -" << pluginName << "/" << featureName << "-" << decoderKlass << (isHardwareDecoder ? "(HW)" : "(SW)") << ":" << rank;
+                qCWarning(GstVideoReceiverLog) << "=== DECODER SELECTED ===" << pluginName << "/" << featureName
+                    << "-" << decoderKlass << (isHardwareDecoder ? ">>> HARDWARE <<<" : ">>> SOFTWARE <<<") << "rank:" << rank;
             }
         }
         g_value_reset(&value);
@@ -1030,21 +1058,85 @@ bool GstVideoReceiver::_addVideoSink(GstPad *pad)
 {
     GstCaps *caps = gst_pad_query_caps(pad, nullptr);
 
-    (void) gst_object_ref(_videoSink); // gst_bin_add() will steal one reference
-    (void) gst_bin_add(GST_BIN(_pipeline), _videoSink);
+    // Log decoder output caps for debugging hardware decoder issues
+    if (caps) {
+        gchar *capsStr = gst_caps_to_string(caps);
+        qCWarning(GstVideoReceiverLog) << "=== DECODER OUTPUT CAPS ===" << capsStr;
+        g_free(capsStr);
+    }
 
-    if (!gst_element_link(_decoder, _videoSink)) {
+    // Log what the sink accepts
+    {
+        GstPad *sinkPad = gst_element_get_static_pad(_videoSink, "sink");
+        if (sinkPad) {
+            GstCaps *sinkCaps = gst_pad_query_caps(sinkPad, nullptr);
+            if (sinkCaps) {
+                gchar *sinkCapsStr = gst_caps_to_string(sinkCaps);
+                qCWarning(GstVideoReceiverLog) << "=== SINK ACCEPTS CAPS ===" << sinkCapsStr;
+                g_free(sinkCapsStr);
+                gst_caps_unref(sinkCaps);
+            }
+            gst_object_unref(sinkPad);
+        }
+    }
+
+    // Insert glupload + glcolorconvert between decoder and sink.
+    // Decoder outputs video/x-raw (CPU memory) but qml6glsink only accepts
+    // video/x-raw(memory:GLMemory). glsinkbin should handle this internally
+    // but often fails to advertise video/x-raw acceptance before GL context
+    // is set up. Explicit glupload fixes this.
+    GstElement *glupload = gst_element_factory_make("glupload", nullptr);
+    GstElement *glcolorconvert = gst_element_factory_make("glcolorconvert", nullptr);
+    if (!glupload || !glcolorconvert) {
+        qCCritical(GstVideoReceiverLog) << "Failed to create glupload/glcolorconvert";
+        gst_clear_object(&glupload);
+        gst_clear_object(&glcolorconvert);
+        gst_clear_caps(&caps);
+        return false;
+    }
+
+    (void) gst_object_ref(_videoSink); // gst_bin_add() will steal one reference
+    gst_bin_add_many(GST_BIN(_pipeline), glupload, glcolorconvert, _videoSink, nullptr);
+
+    if (!gst_element_link_many(_decoder, glupload, glcolorconvert, _videoSink, nullptr)) {
+        qCCritical(GstVideoReceiverLog) << "=== LINK FAILED === decoder -> glupload -> glcolorconvert -> sink";
+
+        // Fallback: try decoder -> videoconvert -> glupload -> glcolorconvert -> sink
+        GstElement *videoconvert = gst_element_factory_make("videoconvert", nullptr);
+        if (videoconvert) {
+            gst_bin_add(GST_BIN(_pipeline), videoconvert);
+            // Unlink previous attempt
+            gst_element_unlink_many(_decoder, glupload, glcolorconvert, _videoSink, nullptr);
+            if (gst_element_link_many(_decoder, videoconvert, glupload, glcolorconvert, _videoSink, nullptr)) {
+                qCWarning(GstVideoReceiverLog) << "=== LINK OK === decoder -> videoconvert -> glupload -> glcolorconvert -> sink";
+                goto link_ok;
+            }
+            qCCritical(GstVideoReceiverLog) << "=== LINK FAILED === even with videoconvert bridge";
+            gst_bin_remove(GST_BIN(_pipeline), videoconvert);
+        }
+
+        gst_bin_remove(GST_BIN(_pipeline), glupload);
+        gst_bin_remove(GST_BIN(_pipeline), glcolorconvert);
         (void) gst_bin_remove(GST_BIN(_pipeline), _videoSink);
         qCCritical(GstVideoReceiverLog) << "Unable to link video sink";
         gst_clear_caps(&caps);
         return false;
     }
+    qCWarning(GstVideoReceiverLog) << "=== LINK OK === decoder -> glupload -> glcolorconvert -> sink";
+link_ok:
 
+    const bool syncEnabled = (_buffer >= 0);
     g_object_set(_videoSink,
                  "widget", _widget,
-                 "sync", (_buffer >= 0),
+                 "sync", syncEnabled,
                  NULL);
 
+    qCWarning(GstVideoReceiverLog) << "=== SINK CONFIG === sync:" << syncEnabled
+        << "(_buffer=" << _buffer << ")";
+
+    // Sync all elements in the display chain to pipeline state
+    if (glupload) (void) gst_element_sync_state_with_parent(glupload);
+    if (glcolorconvert) (void) gst_element_sync_state_with_parent(glcolorconvert);
     (void) gst_element_sync_state_with_parent(_videoSink);
 
     GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "pipeline-with-videosink");
