@@ -13,7 +13,7 @@ import QGroundControl.FlyView
 //   Tap          → auto-focus + ring animation (ViewLink C1)
 //   Hold + drag  → gimbal speed control + arrow indicator (ViewLink A1)
 //
-// Bottom bar: Zoom, Photo, Record, Source, AF, Home, Track
+// Bottom bar: Zoom, Photo, Record, Source, WHT, Home, Lock, Track, More
 // ═══════════════════════════════════════════════════════════════════
 Item {
     id: _root
@@ -27,13 +27,16 @@ Item {
     property var  _vl: QGroundControl.viewLinkController
 
     // ── Overlay state ────────────────────────────────────────────
-    property bool _recording:   false
-    property int  _srcIdx:      0
-    property bool _trackMode:   false
-    property real _joyPitch:    0
-    property real _joyYaw:      0
-    property bool _dragging:    false
-    property int  _touchCount:  0
+    property bool _recording:    false
+    property int  _srcIdx:       0
+    property bool _trackMode:    false
+    property real _joyPitch:     0
+    property real _joyYaw:       0
+    property bool _dragging:     false
+    property int  _touchCount:   0
+    property int  _paletteIdx:   0      // 0=WHT, 1=BLK, 2=RAIN, 3=LAVA
+    property bool _gimbalLocked: false   // lock/follow toggle state
+    property bool _morePanel:    false   // expanded panel visible
 
     // ── Camera source table ──────────────────────────────────────
     readonly property var _sources: [
@@ -41,6 +44,14 @@ Item {
         { id: 1, label: "IR"   },
         { id: 2, label: "PIP"  },
         { id: 3, label: "PIP2" }
+    ]
+
+    // ── Thermal color palette table ──────────────────────────────
+    readonly property var _palettes: [
+        { id: 0, label: "WHT"  },
+        { id: 1, label: "BLK"  },
+        { id: 2, label: "RAIN" },
+        { id: 3, label: "LAVA" }
     ]
 
     // ── Layout constants ─────────────────────────────────────────
@@ -97,7 +108,7 @@ Item {
             font.pixelSize: 11
             font.bold: true
             color: "#CCCCCC"
-            text: "v1.12"
+            text: "v1.13"
         }
     }
 
@@ -327,7 +338,205 @@ Item {
     }
 
     // ═════════════════════════════════════════════════════════════
-    //  BOTTOM CONTROL BAR
+    //  STATUS HUD (bottom-right, above bottom bar)
+    // ═════════════════════════════════════════════════════════════
+    Rectangle {
+        id: statusHud
+        z: 60
+        anchors {
+            right:        parent.right
+            bottom:       bottomBar.top
+            rightMargin:  _margin
+            bottomMargin: _gap * 2
+        }
+        width:  hudCol.implicitWidth + _margin * 2
+        height: hudCol.implicitHeight + _margin * 1.5
+        radius: 6
+        color:  "#AA000000"
+
+        Column {
+            id: hudCol
+            anchors.centerIn: parent
+            spacing: 2
+
+            Text {
+                font.family:    "monospace"
+                font.pixelSize: ScreenTools.defaultFontPointSize * 0.85
+                font.bold:      true
+                color:          "#33FF33"
+                text:           "P " + (_vl ? _vl.gimbalPitch.toFixed(1) : "0.0") + "\u00B0"
+            }
+            Text {
+                font.family:    "monospace"
+                font.pixelSize: ScreenTools.defaultFontPointSize * 0.85
+                font.bold:      true
+                color:          "#33FF33"
+                text:           "Y " + (_vl ? _vl.gimbalYaw.toFixed(1) : "0.0") + "\u00B0"
+            }
+            Text {
+                font.family:    "monospace"
+                font.pixelSize: ScreenTools.defaultFontPointSize * 0.85
+                font.bold:      true
+                color:          "#33FF33"
+                text:           "Z " + (_vl ? _vl.eoZoom.toFixed(1) : "1.0") + "x"
+            }
+            Text {
+                visible:        _vl ? _vl.laserRange > 0 : false
+                font.family:    "monospace"
+                font.pixelSize: ScreenTools.defaultFontPointSize * 0.85
+                font.bold:      true
+                color:          "#33FF33"
+                text:           "LR " + (_vl ? _vl.laserRange.toFixed(0) : "0") + "m"
+            }
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════
+    //  EXPANDED PANEL (slides up when [⋮] tapped)
+    // ═════════════════════════════════════════════════════════════
+    Rectangle {
+        id: expandedPanel
+        z: 59
+        visible: _morePanel
+        anchors {
+            left:           bottomBar.left
+            right:          parent.right
+            bottom:         bottomBar.top
+            rightMargin:    _margin
+            bottomMargin:   _gap * 2
+        }
+        height: panelCol.implicitHeight + _margin * 3
+        radius: 10
+        color:  "#DD000000"
+        border.color: "#555"
+        border.width: 1
+
+        // Dismiss when tapping outside
+        // (handled by overlay MouseArea below)
+
+        Column {
+            id: panelCol
+            anchors {
+                left:       parent.left
+                right:      parent.right
+                top:        parent.top
+                margins:    _margin * 1.5
+            }
+            spacing: _margin
+
+            // ── Gimbal Mode ──
+            Text {
+                text: "Gimbal"
+                color: "#999"
+                font.pixelSize: _fontSize * 0.9
+                font.bold: true
+            }
+            Row {
+                spacing: _gap
+                PanelBtn {
+                    label: "Follow"
+                    onClicked: {
+                        if (_vl) _vl.gimbalFollow()
+                        _gimbalLocked = false
+                    }
+                }
+                PanelBtn {
+                    label: "Lock"
+                    onClicked: {
+                        if (_vl) _vl.gimbalLock()
+                        _gimbalLocked = true
+                    }
+                }
+                PanelBtn {
+                    label: "Down"
+                    onClicked: { if (_vl) _vl.gimbalDown() }
+                }
+            }
+
+            // ── Laser ──
+            Text {
+                text: "Laser"
+                color: "#999"
+                font.pixelSize: _fontSize * 0.9
+                font.bold: true
+            }
+            Row {
+                spacing: _gap
+                PanelBtn {
+                    label: "Once"
+                    onClicked: { if (_vl) _vl.laserRangeOnce() }
+                }
+                PanelBtn {
+                    label: "Cont"
+                    onClicked: { if (_vl) _vl.laserRangeContinuous() }
+                }
+                PanelBtn {
+                    label: "Off"
+                    onClicked: { if (_vl) _vl.laserRangeStop() }
+                }
+            }
+
+            // ── Focus ──
+            Text {
+                text: "Focus"
+                color: "#999"
+                font.pixelSize: _fontSize * 0.9
+                font.bold: true
+            }
+            Row {
+                spacing: _gap
+                PanelBtn {
+                    label: "Auto"
+                    onClicked: { if (_vl) _vl.autoFocus() }
+                }
+                PanelBtn {
+                    label: "MF\u2212"
+                    onClicked: { if (_vl) _vl.manualFocusIn() }
+                }
+                PanelBtn {
+                    label: "MF+"
+                    onClicked: { if (_vl) _vl.manualFocusOut() }
+                }
+            }
+
+            // ── Camera info ──
+            Text {
+                text: "Camera: 192.168.144.119:2000"
+                color: "#999"
+                font.pixelSize: _fontSize * 0.9
+                font.bold: true
+            }
+            Row {
+                spacing: _gap
+                PanelBtn {
+                    label: "Reconnect"
+                    wide: true
+                    onClicked: {
+                        if (_vl) {
+                            _vl.disconnectCamera()
+                            _vl.connectToCamera("192.168.144.119", 2000)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Overlay to dismiss expanded panel when tapping outside ──
+    MouseArea {
+        z: 58
+        anchors.fill: parent
+        visible: _morePanel
+        onClicked: { _morePanel = false }
+    }
+
+    // ═════════════════════════════════════════════════════════════
+    //  BOTTOM CONTROL BAR — grouped buttons with icons
+    //
+    //  ┌───────┐ ┌─────────┐ ┌──────────┐ ┌──────────────┐ ┌──┐
+    //  │ −   + │ │  ⊙   ● │ │ EO  WHT  │ │  ⌂   ⊟   ◎ │ │⋮ │
+    //  └───────┘ └─────────┘ └──────────┘ └──────────────┘ └──┘
+    //   Zoom      Capture     Video        Gimbal           More
     // ═════════════════════════════════════════════════════════════
     Rectangle {
         id: bottomBar
@@ -337,95 +546,154 @@ Item {
             horizontalCenter:   parent.horizontalCenter
             bottomMargin:       ScreenTools.defaultFontPixelHeight
         }
-        width:      barRow.implicitWidth + _margin * 3
+        width:      barRow.width + _margin * 2
         height:     _btnH + _margin * 2
         radius:     height * 0.15
         color:      "#CC000000"
         border.color: "#555"
         border.width: 1
 
-        RowLayout {
+        Row {
             id: barRow
             anchors.centerIn: parent
-            spacing: _gap
+            spacing: _gap * 1.5
 
-            // ── Zoom ──
-            VPBtn {
-                label: "\u2212"
-                fontPx: _btnH * 0.5
-                bold: true
-                onHeldChanged: {
-                    if (!_vl) return
-                    if (held) _vl.zoomOut(4)
-                    else      _vl.zoomStop()
-                }
-            }
-            VPBtn {
-                label: "+"
-                fontPx: _btnH * 0.5
-                bold: true
-                onHeldChanged: {
-                    if (!_vl) return
-                    if (held) _vl.zoomIn(4)
-                    else      _vl.zoomStop()
-                }
-            }
-
-            BarSep {}
-
-            // ── Capture ──
-            VPBtn {
-                label: "PHOTO"
-                onClicked: { if (_vl) _vl.takePhoto() }
-            }
-            VPBtn {
-                label: _recording ? "STOP" : "REC"
-                lit: _recording
-                litColor: "#DD3333"
-                onClicked: {
-                    if (!_vl) return
-                    if (_recording) _vl.stopRecord()
-                    else            _vl.startRecord()
-                    _recording = !_recording
-                }
-            }
-
-            BarSep {}
-
-            // ── Camera source & focus ──
-            VPBtn {
-                label: _sources[_srcIdx].label
-                fontPx: _fontSize * 1.1
-                onClicked: {
-                    if (!_vl) return
-                    _srcIdx = (_srcIdx + 1) % _sources.length
-                    _vl.setVideoSource(_sources[_srcIdx].id)
-                }
-            }
-            VPBtn {
-                label: "AF"
-                fontPx: _fontSize * 1.1
-                onClicked: { if (_vl) _vl.autoFocus() }
-            }
-
-            BarSep {}
-
-            // ── Gimbal & tracking ──
-            VPBtn {
-                label: "HOME"
-                onClicked: { if (_vl) _vl.gimbalHome() }
-            }
-            VPBtn {
-                label: "TRK"
-                fontPx: _fontSize * 1.1
-                lit: _trackMode
-                litColor: "#33CC33"
-                onClicked: {
-                    if (_trackMode) {
-                        if (_vl) _vl.trackStop()
+            // ── Zoom group ──
+            BtnGroup {
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 2
+                    VPBtn {
+                        icon: "\u2212"
+                        iconPx: _btnH * 0.45
+                        bold: true
+                        onHeldChanged: {
+                            if (!_vl) return
+                            if (held) _vl.zoomOut(4)
+                            else      _vl.zoomStop()
+                        }
                     }
-                    _trackMode = !_trackMode
+                    VPBtn {
+                        icon: "+"
+                        iconPx: _btnH * 0.45
+                        bold: true
+                        onHeldChanged: {
+                            if (!_vl) return
+                            if (held) _vl.zoomIn(4)
+                            else      _vl.zoomStop()
+                        }
+                    }
                 }
+            }
+
+            // ── Capture group ──
+            BtnGroup {
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 2
+                    VPBtn {
+                        icon: "\u2299"          // ⊙ photo
+                        iconPx: _btnH * 0.45
+                        sub: "PHOTO"
+                        onClicked: { if (_vl) _vl.takePhoto() }
+                    }
+                    VPBtn {
+                        icon: _recording ? "\u25A0" : "\u25CF" // ■ stop / ● rec
+                        iconPx: _btnH * 0.4
+                        iconColor: _recording ? "#FF4444" : "white"
+                        sub: _recording ? "STOP" : "REC"
+                        lit: _recording
+                        litColor: "#DD3333"
+                        onClicked: {
+                            if (!_vl) return
+                            if (_recording) _vl.stopRecord()
+                            else            _vl.startRecord()
+                            _recording = !_recording
+                        }
+                    }
+                }
+            }
+
+            // ── Video group ──
+            BtnGroup {
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 2
+                    VPBtn {
+                        icon: _sources[_srcIdx].label
+                        iconPx: _fontSize * 1.1
+                        sub: "SRC"
+                        onClicked: {
+                            if (!_vl) return
+                            _srcIdx = (_srcIdx + 1) % _sources.length
+                            _vl.setVideoSource(_sources[_srcIdx].id)
+                        }
+                    }
+                    VPBtn {
+                        icon: _palettes[_paletteIdx].label
+                        iconPx: _fontSize * 1.1
+                        sub: "PAL"
+                        onClicked: {
+                            if (!_vl) return
+                            _paletteIdx = (_paletteIdx + 1) % _palettes.length
+                            _vl.setColorPalette(_palettes[_paletteIdx].id)
+                        }
+                    }
+                }
+            }
+
+            // ── Gimbal group ──
+            BtnGroup {
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 2
+                    VPBtn {
+                        icon: "\u2302"          // ⌂ home
+                        iconPx: _btnH * 0.45
+                        sub: "HOME"
+                        onClicked: { if (_vl) _vl.gimbalHome() }
+                    }
+                    VPBtn {
+                        icon: _gimbalLocked ? "\u25A3" : "\u25A1" // ▣ locked / □ unlocked
+                        iconPx: _btnH * 0.4
+                        sub: _gimbalLocked ? "LCK" : "FLW"
+                        lit: _gimbalLocked
+                        litColor: "#3399FF"
+                        onClicked: {
+                            if (!_vl) return
+                            if (_gimbalLocked) {
+                                _vl.gimbalFollow()
+                                _gimbalLocked = false
+                            } else {
+                                _vl.gimbalLock()
+                                _gimbalLocked = true
+                            }
+                        }
+                    }
+                    VPBtn {
+                        icon: "\u25CE"          // ◎ track
+                        iconPx: _btnH * 0.4
+                        sub: "TRK"
+                        lit: _trackMode
+                        litColor: "#33CC33"
+                        onClicked: {
+                            if (_trackMode) {
+                                if (_vl) _vl.trackStop()
+                            }
+                            _trackMode = !_trackMode
+                        }
+                    }
+                }
+            }
+
+            // ── Overflow ──
+            VPBtn {
+                icon: "\u22EE"              // ⋮
+                iconPx: _btnH * 0.45
+                bold: true
+                lit: _morePanel
+                litColor: "#666666"
+                onClicked: { _morePanel = !_morePanel }
             }
         }
     }
@@ -434,10 +702,13 @@ Item {
     //  INLINE COMPONENTS
     // ═════════════════════════════════════════════════════════════
 
+    // ── Button with icon + optional sub-label ──────────────────
     component VPBtn: Rectangle {
         id: _vpBtn
-        property string label:      ""
-        property real   fontPx:     _fontSize
+        property string icon:       ""
+        property real   iconPx:     _fontSize
+        property string iconColor:  "white"
+        property string sub:        ""      // small label below icon
         property bool   bold:       false
         property bool   lit:        false
         property color  litColor:   "#DD3333"
@@ -445,22 +716,32 @@ Item {
 
         signal clicked()
 
-        Layout.preferredWidth:  _btnW
-        Layout.preferredHeight: _btnH
+        width:  _btnW
+        height: _btnH
         radius: _btnH * 0.15
         color: {
             if (lit) return _vpMa.pressed ? Qt.darker(litColor, 1.4) : litColor
-            return _vpMa.pressed ? "#555" : "#222"
+            return _vpMa.pressed ? "#555" : "transparent"
         }
-        border.color: lit ? Qt.lighter(litColor, 1.3) : "#555"
-        border.width: 1
 
-        Text {
+        Column {
             anchors.centerIn: parent
-            text:           _vpBtn.label
-            color:          "white"
-            font.pixelSize: _vpBtn.fontPx
-            font.bold:      _vpBtn.bold || _vpBtn.lit
+            spacing: sub ? 1 : 0
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text:           _vpBtn.icon
+                color:          _vpBtn.iconColor
+                font.pixelSize: _vpBtn.iconPx
+                font.bold:      _vpBtn.bold || _vpBtn.lit
+            }
+            Text {
+                visible:        _vpBtn.sub !== ""
+                anchors.horizontalCenter: parent.horizontalCenter
+                text:           _vpBtn.sub
+                color:          "#999"
+                font.pixelSize: _fontSize * 0.65
+            }
         }
 
         MouseArea {
@@ -470,10 +751,47 @@ Item {
         }
     }
 
-    component BarSep: Rectangle {
-        Layout.preferredWidth:  1
-        Layout.preferredHeight: _btnH * 0.6
-        Layout.alignment:       Qt.AlignVCenter
-        color: "#555"
+    // ── Group background for related buttons ───────────────────
+    component BtnGroup: Rectangle {
+        default property alias content: _groupContent.data
+
+        width:  _groupContent.childrenRect.width + 6
+        height: _btnH
+        radius: _btnH * 0.15
+        color:  "#33FFFFFF"     // subtle group tint
+
+        Item {
+            id: _groupContent
+            anchors.fill: parent
+        }
+    }
+
+    // ── Button for expanded panel ──────────────────────────────
+    component PanelBtn: Rectangle {
+        id: _panelBtn
+        property string label:  ""
+        property bool   wide:   false
+
+        signal clicked()
+
+        width:  wide ? _btnW * 2.2 : _btnW * 1.5
+        height: _btnH * 0.85
+        radius: _btnH * 0.12
+        color:  _panelMa.pressed ? "#555" : "#333"
+        border.color: "#666"
+        border.width: 1
+
+        Text {
+            anchors.centerIn: parent
+            text:           _panelBtn.label
+            color:          "white"
+            font.pixelSize: _fontSize
+        }
+
+        MouseArea {
+            id: _panelMa
+            anchors.fill: parent
+            onClicked: _panelBtn.clicked()
+        }
     }
 }
